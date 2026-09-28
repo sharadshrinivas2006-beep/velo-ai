@@ -1,0 +1,6 @@
+{
+  "name": "VeloFin AI Marketing & Analytics Studio",
+  "description": "AI-powered marketing agent and compliance-guarded analytics dashboard for FinTech teams to generate campaigns, craft safe customer responses, and optimize performance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
