@@ -3,11 +3,12 @@ import { Header } from './components/Header';
 import { AgentStudio } from './components/MarketingAgent/AgentStudio';
 import { AnalyticsDashboard } from './components/Analytics/AnalyticsDashboard';
 import { SafeguardsInspector } from './components/Safeguards/SafeguardsInspector';
+import { SafetyHistoryTab } from './components/Safeguards/SafetyHistoryTab';
 import { CampaignData } from './types';
 import { Check } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'agent' | 'analytics' | 'safeguards'>('agent');
+  const [activeTab, setActiveTab] = useState<'agent' | 'analytics' | 'safeguards' | 'safety_history'>('agent');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -32,6 +33,9 @@ export default function App() {
           <AnalyticsDashboard onOptimizeCampaignInAgent={handleOptimizeCampaignInAgent} />
         )}
         {activeTab === 'safeguards' && <SafeguardsInspector />}
+        {activeTab === 'safety_history' && (
+          <SafetyHistoryTab onNavigateToAgent={() => setActiveTab('agent')} />
+        )}
       </main>
 
       {/* Minimal Toast Notification */}

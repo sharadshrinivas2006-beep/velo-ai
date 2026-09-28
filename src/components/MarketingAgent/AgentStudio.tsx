@@ -5,16 +5,28 @@ import {
   Check, 
   Edit3, 
   RotateCw, 
-  SlidersHorizontal
+  SlidersHorizontal,
+  Lock,
+  Headphones
 } from 'lucide-react';
 import { requestMarketingAgent } from '../../services/api';
-import { ChatMessage } from '../../types';
+import { ChatMessage, WritingMode, SafetyReviewResult } from '../../types';
 import { DraftEditorModal } from './DraftEditorModal';
 import { FormattedContent } from '../FormattedContent';
+import { WritingModeSelector } from './WritingModeSelector';
+import { SafetyReviewCard } from './SafetyReviewCard';
+import { SafetyReviewModal } from './SafetyReviewModal';
+import { 
+  WRITING_MODES, 
+  performComprehensiveSafetyReview, 
+  addSafetyHistoryRecord,
+  maskSensitiveSecrets
+} from '../../utils/safetyAuditor';
 
 const PRESET_PROMPTS = [
   {
-    category: 'Campaign',
+    mode: 'email' as WritingMode,
+    category: 'Email Campaign',
     title: 'Treasury Yield Email Campaign',
     channel: 'Email Campaign',
     audience: 'Startup Founders',
@@ -24,42 +36,57 @@ const PRESET_PROMPTS = [
     prompt: 'Create an email campaign sequence introducing VeloYield Treasury to startup founders holding idle cash in commercial checking accounts.',
   },
   {
+    mode: 'advertisement' as WritingMode,
     category: 'Advertising',
     title: 'Corporate Card Ad Copy',
     channel: 'Paid Ad Copy (LinkedIn & Search)',
     audience: 'Finance Directors & CFOs',
     goal: 'Demo bookings',
-    tone: 'Professional & Direct',
+    tone: 'Direct & Action-Oriented',
     product: 'VeloCard Corporate (1.5% Cashback)',
     prompt: 'Write LinkedIn Sponsored Content and Google Search ad copy focusing on 1.5% software cashback and zero personal liability for corporate cards.',
   },
   {
+    mode: 'blog' as WritingMode,
+    category: 'Blog Post',
+    title: 'Runway Optimization Guide',
+    channel: 'Blog Post Draft',
+    audience: 'Startup Founders & CFOs',
+    goal: 'Organic SEO & Thought Leadership',
+    tone: 'Authoritative & Educational',
+    product: 'VeloYield Treasury & VeloCard',
+    prompt: 'Draft an educational blog post on how high-growth startups preserve runway through cash sweep accounts and working capital credit lines without dilution.',
+  },
+  {
+    mode: 'social_media' as WritingMode,
+    category: 'Social Media',
+    title: 'Founder Cash Management Post',
+    channel: 'Social Media Suite',
+    audience: 'Founders & Angel Investors',
+    goal: 'Engagement & Inbound Discussion',
+    tone: 'Conversational & Engaging',
+    product: 'VeloYield Treasury',
+    prompt: 'Create a thought-provoking LinkedIn & X post about why founders overlook treasury returns on seed funding while obsessing over SaaS discounts.',
+  },
+  {
+    mode: 'customer_support' as WritingMode,
     category: 'Customer Support',
     title: 'Disputed Charge Response',
     channel: 'Customer Support FAQ',
     audience: 'Account Holder',
     goal: 'Reassurance & human escalation',
-    tone: 'Direct & Empathetic',
+    tone: 'Empathetic, Transparent & De-escalating',
     product: 'VeloCard Security',
     prompt: 'A customer says: "I see an unauthorized charge of $4,200 on our virtual card that nobody approved. Was our account hacked?!" Draft a safe FinTech response.',
   },
   {
-    category: 'Customer Support',
-    title: 'Yield Inquiry Response',
-    channel: 'Customer Support FAQ',
-    audience: 'Prospective Treasurer',
-    goal: 'Terms clarification',
-    tone: 'Factual & Transparent',
-    product: 'VeloYield Treasury',
-    prompt: 'A prospective client asks: "Can you guarantee that your 4.85% APY yield will stay fixed for 12 months with zero risk?" Draft our official answer.',
-  },
-  {
+    mode: 'product_recommendation' as WritingMode,
     category: 'Product Matching',
     title: 'Segment Recommendations',
     channel: 'Product Recommendation',
     audience: 'E-commerce & SaaS Companies',
     goal: 'Needs assessment',
-    tone: 'Advisory',
+    tone: 'Consultative & Objective',
     product: 'VeloFin Suite',
     prompt: 'Recommend which VeloFin products best fit a growing e-commerce merchant with $3M annual sales versus an early-stage SaaS startup.',
   },
@@ -69,27 +96,33 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: 'msg-welcome',
     role: 'assistant',
-    content: `### Marketing Content Assistant
+    content: `### Marketing Agent & Compliance Studio
 
-I can help generate campaigns, draft customer support responses, and outline product recommendations across customer segments.
+Select a writing mode above to tailor content structure and tone. Every generated result is automatically evaluated by automated safety and compliance safeguards.
 
-**Capabilities:**
-- Multi-channel campaigns (Email, Search, LinkedIn, Content)
-- Customer support responses with proper safety guidelines and human routing
-- Segment-based product recommendations
+**Supported Writing Modes:**
+- **Blog:** Long-form thought leadership, SEO educational guides, benchmark deep dives.
+- **Email:** Direct outbound sequences, founder onboarding drips, product newsletters.
+- **Advertisement:** Google Search headlines, LinkedIn sponsored copy, high-intent display text.
+- **Social Media:** Executive X/LinkedIn posts, founder insights, milestone updates.
+- **Customer Support Response:** FAQ replies, account security concerns, dispute routing, de-escalation.
+- **Product Recommendation:** Needs-based product matching across treasury, credit lines, cards, and FX.
 
-Select a prompt preset below or enter custom campaign details to begin.`,
+Select a preset below or enter a custom request to generate compliant copy.`,
     timestamp: 'Just now',
   },
 ];
 
 export const AgentStudio: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [selectedMode, setSelectedMode] = useState<WritingMode>('email');
   const [inputPrompt, setInputPrompt] = useState('');
-  const [channel, setChannel] = useState('Email Campaign');
+  
+  // Parameter State
+  const [channel, setChannel] = useState(WRITING_MODES.email.defaultChannel);
   const [targetAudience, setTargetAudience] = useState('Startup Founders');
-  const [goal, setGoal] = useState('Product Activation');
-  const [tone, setTone] = useState('Data-Driven & Concise');
+  const [goal, setGoal] = useState(WRITING_MODES.email.defaultGoal);
+  const [tone, setTone] = useState(WRITING_MODES.email.defaultTone);
   const [product, setProduct] = useState('VeloYield Treasury (4.85% APY sweep)');
   const [isLoading, setIsLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
@@ -97,6 +130,13 @@ export const AgentStudio: React.FC = () => {
   // Draft Editor Modal State
   const [editingDraft, setEditingDraft] = useState<{ content: string; title: string; channel: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Safety Details Modal State
+  const [inspectingReview, setInspectingReview] = useState<{
+    review: SafetyReviewResult;
+    mode: WritingMode;
+    dateStr: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +148,15 @@ export const AgentStudio: React.FC = () => {
     scrollToBottom();
   }, [messages, isLoading]);
 
+  // Mode change handler: updates mode and applies appropriate defaults
+  const handleSelectMode = (mode: WritingMode) => {
+    setSelectedMode(mode);
+    const cfg = WRITING_MODES[mode];
+    setChannel(cfg.defaultChannel);
+    setGoal(cfg.defaultGoal);
+    setTone(cfg.defaultTone);
+  };
+
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -118,18 +167,23 @@ export const AgentStudio: React.FC = () => {
     const promptText = textToSend || inputPrompt;
     if (!promptText.trim() || isLoading) return;
 
+    const currentMode = overrideParams?.writingMode || selectedMode;
     const currentChannel = overrideParams?.channel || channel;
     const currentAudience = overrideParams?.audience || targetAudience;
     const currentGoal = overrideParams?.goal || goal;
     const currentTone = overrideParams?.tone || tone;
     const currentProduct = overrideParams?.product || product;
 
+    // Check for sensitive credential input in user prompt and mask for clean display
+    const maskedUserDisplayPrompt = maskSensitiveSecrets(promptText);
+
     const userMessage: ChatMessage = {
       id: `usr-${Date.now()}`,
       role: 'user',
-      content: promptText,
+      content: maskedUserDisplayPrompt,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       parameters: {
+        writingMode: currentMode,
         channel: currentChannel,
         targetAudience: currentAudience,
         goal: currentGoal,
@@ -144,9 +198,10 @@ export const AgentStudio: React.FC = () => {
 
     try {
       const response = await requestMarketingAgent({
-        type: 'campaign',
+        type: currentMode === 'customer_support' ? 'support_faq' : currentMode === 'product_recommendation' ? 'recommendation' : 'campaign',
         prompt: promptText,
         parameters: {
+          writingMode: currentMode,
           channel: currentChannel,
           targetAudience: currentAudience,
           goal: currentGoal,
@@ -155,12 +210,35 @@ export const AgentStudio: React.FC = () => {
         },
       });
 
+      // Perform comprehensive safety evaluation
+      const safetyReview: SafetyReviewResult = performComprehensiveSafetyReview(
+        promptText,
+        response.content,
+        currentMode
+      );
+
+      // Automatically record in Safety History
+      addSafetyHistoryRecord({
+        id: `safe-rec-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        timestamp: new Date().toISOString(),
+        formattedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: currentMode,
+        modeLabel: WRITING_MODES[currentMode].label,
+        score: safetyReview.score,
+        riskLevel: safetyReview.riskLevel,
+        flaggedCategories: safetyReview.flaggedIssues.map((i) => i.category),
+        maskedExcerpt: safetyReview.maskedResponseExcerpt,
+        review: safetyReview,
+        isSample: false,
+      });
+
       const assistantMessage: ChatMessage = {
         id: `asst-${Date.now()}`,
         role: 'assistant',
         content: response.content,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         parameters: {
+          writingMode: currentMode,
           channel: currentChannel,
           targetAudience: currentAudience,
           goal: currentGoal,
@@ -168,6 +246,7 @@ export const AgentStudio: React.FC = () => {
           product: currentProduct,
         },
         safeguardAudit: response.safeguardAudit,
+        safetyReview,
         isSimulated: response.isSimulated,
         modelUsed: response.modelUsed,
       };
@@ -188,12 +267,14 @@ export const AgentStudio: React.FC = () => {
   };
 
   const handleSelectPreset = (preset: typeof PRESET_PROMPTS[0]) => {
+    setSelectedMode(preset.mode);
     setChannel(preset.channel);
     setTargetAudience(preset.audience);
     setGoal(preset.goal);
     setTone(preset.tone);
     setProduct(preset.product);
     handleSendMessage(preset.prompt, {
+      writingMode: preset.mode,
       channel: preset.channel,
       audience: preset.audience,
       goal: preset.goal,
@@ -202,20 +283,33 @@ export const AgentStudio: React.FC = () => {
     });
   };
 
+  const activeModeConfig = WRITING_MODES[selectedMode];
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
-      {/* Parameter Controls Bar */}
+      {/* 1. Clear Writing Modes Selector */}
+      <WritingModeSelector
+        selectedMode={selectedMode}
+        onSelectMode={handleSelectMode}
+      />
+
+      {/* 2. Parameter Controls Bar */}
       <div className="bg-white border border-[#D8E2EA] rounded-lg p-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-[#202938]">Campaign Parameters</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-[#202938]">Campaign Parameters</h2>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${activeModeConfig.tagClass}`}>
+                {activeModeConfig.label} Mode
+              </span>
+            </div>
             <p className="text-xs text-[#667085] mt-0.5">
               {channel} · {targetAudience} · {product}
             </p>
           </div>
           <button
             onClick={() => setShowConfig(!showConfig)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#202938] bg-[#F8FAFC] hover:bg-[#EAF0F5] border border-[#D8E2EA] rounded-md transition self-start sm:self-auto"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#202938] bg-[#F8FAFC] hover:bg-[#EAF0F5] border border-[#D8E2EA] rounded-md transition self-start sm:self-auto shadow-2xs"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-[#667085]" />
             <span>{showConfig ? 'Hide Parameters' : 'Adjust Parameters'}</span>
@@ -226,19 +320,13 @@ export const AgentStudio: React.FC = () => {
         {showConfig && (
           <div className="mt-4 pt-4 border-t border-[#D8E2EA] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs">
             <div>
-              <label className="block text-[#667085] font-medium mb-1">Channel</label>
-              <select
+              <label className="block text-[#667085] font-medium mb-1">Channel Format</label>
+              <input
+                type="text"
                 value={channel}
                 onChange={(e) => setChannel(e.target.value)}
                 className="w-full bg-[#F8FAFC] border border-[#D8E2EA] rounded-md px-2.5 py-1.5 text-[#202938] focus:outline-none focus:ring-1 focus:ring-[#426A8C] focus:bg-white"
-              >
-                <option value="Email Campaign">Email Campaign</option>
-                <option value="Paid Ad Copy (LinkedIn & Search)">Paid Search &amp; Social</option>
-                <option value="Blog Post Draft">Blog Post Draft</option>
-                <option value="Social Media Suite">Social Media Post</option>
-                <option value="Customer Support FAQ">Customer Support FAQ</option>
-                <option value="Product Recommendation">Product Recommendation</option>
-              </select>
+              />
             </div>
 
             <div>
@@ -271,24 +359,20 @@ export const AgentStudio: React.FC = () => {
 
             <div>
               <label className="block text-[#667085] font-medium mb-1">Tone</label>
-              <select
+              <input
+                type="text"
                 value={tone}
                 onChange={(e) => setTone(e.target.value)}
                 className="w-full bg-[#F8FAFC] border border-[#D8E2EA] rounded-md px-2.5 py-1.5 text-[#202938] focus:outline-none focus:ring-1 focus:ring-[#426A8C] focus:bg-white"
-              >
-                <option value="Data-Driven & Concise">Data-Driven &amp; Concise</option>
-                <option value="Conversational & Clear">Conversational &amp; Clear</option>
-                <option value="Institutional & Direct">Institutional &amp; Direct</option>
-              </select>
+              />
             </div>
 
             <div>
-              <label className="block text-[#667085] font-medium mb-1">Campaign Goal</label>
+              <label className="block text-[#667085] font-medium mb-1">Goal</label>
               <input
                 type="text"
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
-                placeholder="e.g. Schedule Demo"
                 className="w-full bg-[#F8FAFC] border border-[#D8E2EA] rounded-md px-2.5 py-1.5 text-[#202938] focus:outline-none focus:ring-1 focus:ring-[#426A8C] focus:bg-white"
               />
             </div>
@@ -303,9 +387,13 @@ export const AgentStudio: React.FC = () => {
           <button
             key={idx}
             onClick={() => handleSelectPreset(preset)}
-            className="px-2.5 py-1 bg-white hover:bg-[#F3F7FA] text-[#202938] border border-[#D8E2EA] rounded-md transition shrink-0 shadow-2xs"
+            className="px-2.5 py-1 bg-white hover:bg-[#F3F7FA] text-[#202938] border border-[#D8E2EA] rounded-md transition shrink-0 shadow-2xs flex items-center gap-1.5"
           >
-            {preset.title}
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ backgroundColor: WRITING_MODES[preset.mode].hex }}
+            />
+            <span>{preset.title}</span>
           </button>
         ))}
       </div>
@@ -313,98 +401,134 @@ export const AgentStudio: React.FC = () => {
       {/* Main Conversation & Output View */}
       <div className="bg-white border border-[#D8E2EA] rounded-lg shadow-sm overflow-hidden flex flex-col">
         {/* Messages Stream */}
-        <div className="p-6 space-y-6 max-h-[620px] overflow-y-auto">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex flex-col ${
-                message.role === 'user' ? 'items-end' : 'items-start'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1.5 text-xs text-[#667085]">
-                <span className="font-semibold text-[#202938]">
-                  {message.role === 'assistant' ? 'VeloFin Agent' : 'You'}
-                </span>
-                <span>·</span>
-                <span>{message.timestamp}</span>
-              </div>
+        <div className="p-6 space-y-6 max-h-[640px] overflow-y-auto">
+          {messages.map((message) => {
+            const msgMode = message.parameters?.writingMode || selectedMode;
+            const modeCfg = WRITING_MODES[msgMode];
 
-              {/* Message Container */}
+            return (
               <div
-                className={`max-w-3xl rounded-lg p-5 text-sm leading-relaxed ${
-                  message.role === 'user'
-                    ? 'bg-[#EAF0F5] text-[#202938] border border-[#D8E2EA]'
-                    : 'bg-white text-[#202938] border border-[#D8E2EA] w-full shadow-2xs'
+                key={message.id}
+                className={`flex flex-col ${
+                  message.role === 'user' ? 'items-end' : 'items-start'
                 }`}
               >
-                {/* User Parameters note if applicable */}
-                {message.role === 'user' && message.parameters && (
-                  <div className="text-xs text-[#667085] mb-2 pb-2 border-b border-[#D8E2EA] flex flex-wrap gap-2">
-                    <span>Channel: {message.parameters.channel}</span>
-                    <span>·</span>
-                    <span>Audience: {message.parameters.targetAudience}</span>
-                  </div>
-                )}
-
-                {/* Render Clean UI formatted content */}
-                {message.role === 'assistant' ? (
-                  <FormattedContent content={message.content} />
-                ) : (
-                  <div className="whitespace-pre-wrap">{message.content}</div>
-                )}
-
-                {/* Response Actions */}
-                {message.role === 'assistant' && message.id !== 'msg-welcome' && (
-                  <div className="mt-4 pt-3 border-t border-[#D8E2EA] flex items-center justify-between text-xs text-[#667085]">
-                    <span className="text-[11px]">
-                      Reviewed against FinTech marketing safeguards.
+                <div className="flex items-center gap-2 mb-1.5 text-xs text-[#667085]">
+                  <span className="font-semibold text-[#202938]">
+                    {message.role === 'assistant' ? 'VeloFin Agent' : 'You'}
+                  </span>
+                  {message.role === 'assistant' && modeCfg && (
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold border ${modeCfg.tagClass}`}>
+                      {modeCfg.label}
                     </span>
+                  )}
+                  <span>·</span>
+                  <span>{message.timestamp}</span>
+                </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleCopy(message.id, message.content)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#F8FAFC] hover:bg-[#EAF0F5] text-[#202938] border border-[#D8E2EA] transition"
-                      >
-                        {copiedId === message.id ? (
-                          <Check className="w-3.5 h-3.5 text-[#426A8C]" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5 text-[#667085]" />
-                        )}
-                        <span>{copiedId === message.id ? 'Copied' : 'Copy'}</span>
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          setEditingDraft({
-                            content: message.content,
-                            title: 'Refine Draft',
-                            channel: message.parameters?.channel || channel,
-                          })
-                        }
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#EAF0F5] hover:bg-[#DFE9F2] text-[#426A8C] border border-[#D8E2EA] font-medium transition"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit &amp; Regenerate</span>
-                      </button>
+                {/* Message Container with Subtle Mode Color Accent */}
+                <div
+                  className={`max-w-3xl rounded-lg p-5 text-sm leading-relaxed ${
+                    message.role === 'user'
+                      ? 'bg-[#EAF0F5] text-[#202938] border border-[#D8E2EA]'
+                      : 'bg-white text-[#202938] border border-[#D8E2EA] w-full shadow-2xs'
+                  }`}
+                  style={
+                    message.role === 'assistant' && modeCfg
+                      ? { borderLeftWidth: '4px', borderLeftColor: modeCfg.hex }
+                      : undefined
+                  }
+                >
+                  {/* User Parameters note if applicable */}
+                  {message.role === 'user' && message.parameters && (
+                    <div className="text-xs text-[#667085] mb-2 pb-2 border-b border-[#D8E2EA] flex flex-wrap gap-2">
+                      <span>Mode: {WRITING_MODES[message.parameters.writingMode || 'email']?.label}</span>
+                      <span>·</span>
+                      <span>Channel: {message.parameters.channel}</span>
+                      <span>·</span>
+                      <span>Audience: {message.parameters.targetAudience}</span>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {/* Render Clean UI formatted content */}
+                  {message.role === 'assistant' ? (
+                    <FormattedContent content={message.content} />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{message.content}</div>
+                  )}
+
+                  {/* Response Actions & Safety Review Card */}
+                  {message.role === 'assistant' && message.id !== 'msg-welcome' && (
+                    <>
+                      {/* Safety Review for Each Generated Result */}
+                      {message.safetyReview && (
+                        <SafetyReviewCard
+                          review={message.safetyReview}
+                          modeLabel={modeCfg?.label}
+                          onOpenDetailsModal={() =>
+                            setInspectingReview({
+                              review: message.safetyReview!,
+                              mode: msgMode,
+                              dateStr: message.timestamp,
+                            })
+                          }
+                        />
+                      )}
+
+                      <div className="mt-4 pt-3 border-t border-[#D8E2EA] flex items-center justify-between text-xs text-[#667085]">
+                        <span className="text-[11px]">
+                          Automated evaluation against FinTech marketing safeguards.
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopy(message.id, message.content)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#F8FAFC] hover:bg-[#EAF0F5] text-[#202938] border border-[#D8E2EA] transition"
+                          >
+                            {copiedId === message.id ? (
+                              <Check className="w-3.5 h-3.5 text-[#426A8C]" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-[#667085]" />
+                            )}
+                            <span>{copiedId === message.id ? 'Copied' : 'Copy'}</span>
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              setEditingDraft({
+                                content: message.content,
+                                title: `Refine ${modeCfg?.label || 'Draft'}`,
+                                channel: message.parameters?.channel || channel,
+                              })
+                            }
+                            className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#EAF0F5] hover:bg-[#DFE9F2] text-[#426A8C] border border-[#D8E2EA] font-medium transition"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit &amp; Regenerate</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Loading Indicator */}
           {isLoading && (
             <div className="flex items-center gap-3 p-4 bg-[#F8FAFC] border border-[#D8E2EA] rounded-lg text-xs text-[#667085]">
               <RotateCw className="w-4 h-4 animate-spin text-[#426A8C]" />
-              <span className="text-[#202938] font-medium">Generating compliant FinTech draft...</span>
+              <span className="text-[#202938] font-medium">
+                Generating compliant FinTech draft in {activeModeConfig.label} mode...
+              </span>
             </div>
           )}
 
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Message Input Bar */}
+        {/* Message Input Bar with Clear Mode Indicator */}
         <div className="p-4 border-t border-[#D8E2EA] bg-[#F8FAFC]">
           <form
             onSubmit={(e) => {
@@ -418,7 +542,7 @@ export const AgentStudio: React.FC = () => {
                 type="text"
                 value={inputPrompt}
                 onChange={(e) => setInputPrompt(e.target.value)}
-                placeholder="Describe the content you need (e.g., 'Draft LinkedIn ad copy for startup founders highlighting 4.85% variable yield')..."
+                placeholder={`Describe what you want to write in ${activeModeConfig.label} mode (e.g., 'Introduce treasury cash sweep with 4.85% variable yield')...`}
                 className="flex-1 bg-white border border-[#D8E2EA] rounded-md px-3.5 py-2.5 text-sm text-[#202938] placeholder-[#667085] focus:outline-none focus:ring-1 focus:ring-[#426A8C]"
               />
               <button
@@ -431,7 +555,13 @@ export const AgentStudio: React.FC = () => {
               </button>
             </div>
             <div className="text-[11px] text-[#667085] flex items-center justify-between px-0.5">
-              <span>Channel: {channel} · Audience: {targetAudience}</span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="w-2 h-2 rounded-full inline-block"
+                  style={{ backgroundColor: activeModeConfig.hex }}
+                />
+                <span>Active Mode: <strong className="text-[#202938]">{activeModeConfig.label}</strong> ({channel})</span>
+              </span>
               <span>Press Enter to generate</span>
             </div>
           </form>
@@ -458,6 +588,17 @@ export const AgentStudio: React.FC = () => {
               return updated;
             });
           }}
+        />
+      )}
+
+      {/* Safety Details Inspection Modal */}
+      {inspectingReview && (
+        <SafetyReviewModal
+          isOpen={!!inspectingReview}
+          onClose={() => setInspectingReview(null)}
+          review={inspectingReview.review}
+          mode={inspectingReview.mode}
+          dateStr={inspectingReview.dateStr}
         />
       )}
     </div>

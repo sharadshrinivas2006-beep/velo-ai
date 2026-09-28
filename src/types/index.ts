@@ -1,5 +1,25 @@
 export type TimeRange = '7d' | '30d' | 'q3' | 'ytd';
 
+export type WritingMode = 
+  | 'blog'
+  | 'email'
+  | 'advertisement'
+  | 'social_media'
+  | 'customer_support'
+  | 'product_recommendation';
+
+export type RiskLevel = 'low' | 'moderate' | 'high' | 'critical';
+
+export interface FlaggedIssue {
+  id: string;
+  category: string;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  title: string;
+  explanation: string;
+  flaggedPhrase?: string;
+  recommendation: string;
+}
+
 export interface SafeguardCheck {
   name: string;
   passed: boolean;
@@ -8,9 +28,45 @@ export interface SafeguardCheck {
 
 export interface SafeguardAuditResult {
   passed: boolean;
-  score: number;
+  score: number; // 0-100, higher means lower detected risk
+  riskLevel?: RiskLevel;
   checks: SafeguardCheck[];
   disclaimer: string;
+  flaggedIssues?: FlaggedIssue[];
+  hasCredentialRisk?: boolean;
+  requiresHumanEscalation?: boolean;
+  credentialWarning?: string;
+  maskedPrompt?: string;
+  maskedExcerpt?: string;
+}
+
+export interface SafetyReviewResult {
+  score: number; // 0-100 (100 = lowest risk)
+  riskLevel: RiskLevel;
+  passed: boolean;
+  summary: string;
+  flaggedIssues: FlaggedIssue[];
+  hasCredentialRisk: boolean;
+  credentialWarning?: string;
+  requiresHumanEscalation: boolean;
+  maskedUserPrompt: string;
+  maskedResponseExcerpt: string;
+  checks: SafeguardCheck[];
+  disclaimer: string;
+}
+
+export interface SafetyHistoryRecord {
+  id: string;
+  timestamp: string; // ISO string
+  formattedDate: string;
+  mode: WritingMode;
+  modeLabel: string;
+  score: number;
+  riskLevel: RiskLevel;
+  flaggedCategories: string[];
+  maskedExcerpt: string;
+  review: SafetyReviewResult;
+  isSample?: boolean;
 }
 
 export interface CampaignParameters {
@@ -19,6 +75,7 @@ export interface CampaignParameters {
   goal: string;
   tone: string;
   product: string;
+  writingMode?: WritingMode;
 }
 
 export interface ChatMessage {
@@ -29,6 +86,7 @@ export interface ChatMessage {
   parameters?: Partial<CampaignParameters>;
   missingFields?: string[];
   safeguardAudit?: SafeguardAuditResult;
+  safetyReview?: SafetyReviewResult;
   isSimulated?: boolean;
   modelUsed?: string;
 }

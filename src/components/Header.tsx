@@ -1,8 +1,8 @@
 import React from 'react';
 
 interface HeaderProps {
-  activeTab: 'agent' | 'analytics' | 'safeguards';
-  setActiveTab: (tab: 'agent' | 'analytics' | 'safeguards') => void;
+  activeTab: 'agent' | 'analytics' | 'safeguards' | 'safety_history';
+  setActiveTab: (tab: 'agent' | 'analytics' | 'safeguards' | 'safety_history') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
@@ -52,6 +52,17 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
               }`}
             >
               Safeguards &amp; Compliance
+            </button>
+
+            <button
+              onClick={() => setActiveTab('safety_history')}
+              className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                activeTab === 'safety_history'
+                  ? 'bg-[#EAF0F5] text-[#426A8C] font-semibold border border-[#D8E2EA]'
+                  : 'text-[#667085] hover:text-[#202938] hover:bg-[#F3F7FA] border border-transparent'
+              }`}
+            >
+              Safety History
             </button>
           </nav>
         </div>

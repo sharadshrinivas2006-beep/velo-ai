@@ -1,4 +1,4 @@
-import { SafeguardAuditResult } from '../types';
+import { SafeguardAuditResult, SafetyReviewResult, WritingMode } from '../types';
 
 export interface MarketingAgentPayload {
   type: 'campaign' | 'support_faq' | 'recommendation' | 'refine' | 'chat';
@@ -9,12 +9,14 @@ export interface MarketingAgentPayload {
     goal?: string;
     tone?: string;
     product?: string;
+    writingMode?: WritingMode;
   };
 }
 
 export interface MarketingAgentResponse {
   content: string;
   safeguardAudit: SafeguardAuditResult;
+  safetyReview?: SafetyReviewResult;
   isSimulated: boolean;
   modelUsed?: string;
 }

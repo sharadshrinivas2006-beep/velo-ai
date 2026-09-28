@@ -57,19 +57,35 @@ export interface MarketingAgentRequest {
     goal?: string;
     tone?: string;
     product?: string;
+    writingMode?: string;
   };
   history?: Array<{ role: 'user' | 'model'; content: string }>;
 }
 
 export interface SafeguardAuditResult {
   passed: boolean;
-  score: number; // 0-100
+  score: number; // 0-100, higher means lower detected risk
+  riskLevel?: 'low' | 'moderate' | 'high' | 'critical';
   checks: Array<{
     name: string;
     passed: boolean;
     explanation: string;
   }>;
   disclaimer: string;
+  flaggedIssues?: Array<{
+    id: string;
+    category: string;
+    severity: 'low' | 'moderate' | 'high' | 'critical';
+    title: string;
+    explanation: string;
+    flaggedPhrase?: string;
+    recommendation: string;
+  }>;
+  hasCredentialRisk?: boolean;
+  requiresHumanEscalation?: boolean;
+  credentialWarning?: string;
+  maskedPrompt?: string;
+  maskedExcerpt?: string;
 }
 
 export async function generateMarketingContent(req: MarketingAgentRequest) {
@@ -187,78 +203,176 @@ Important note: If Data Source is "User-Entered Campaign Figures", explicitly ev
 }
 
 // Local Safeguard Auditor that verifies FinTech content safety rules
-export function auditSafeguards(text: string): SafeguardAuditResult {
-  const lower = text.toLowerCase();
+export function auditSafeguards(text: string, promptText?: string): SafeguardAuditResult {
+  const combined = `${promptText || ''} \n ${text}`;
+  const lower = combined.toLowerCase();
   const checks = [];
+  const flaggedIssues: NonNullable<SafeguardAuditResult['flaggedIssues']> = [];
+  let score = 100;
 
-  // Check 1: No guaranteed returns or unrealistic yield promises
-  const hasGuaranteedReturn = /guarantee(d)?\s+(return|profit|yield|rate|gain)/i.test(text) ||
-    /risk-free\s+(investment|return|yield)/i.test(text) ||
-    /(100%|surefire)\s+(profit|success)/i.test(text);
+  // Check 1: Sensitive Credential & OTP Shield
+  const hasSSNPattern = /\b\d{3}[- ]\d{2}[- ]\d{4}\b/.test(combined);
+  const hasCardPattern = /\b(?:\d{4}[ -]?){3}\d{4}\b/.test(combined);
+  const mentionsOTP = /\b(otp|one-time\s+passcode|verification\s+code|auth\s+code|security\s+token)\b/i.test(lower);
+  const requestsSecret = /(enter|provide|send|repeat|verify|share|type|confirm)\s+(your\s+)?(otp|password|pin|cvv|passcode|secret|card\s+number)/i.test(lower);
+  const hasPII = hasSSNPattern || hasCardPattern || mentionsOTP || requestsSecret;
 
-  checks.push({
-    name: 'Guaranteed Returns / Zero-Risk Claims',
-    passed: !hasGuaranteedReturn,
-    explanation: hasGuaranteedReturn
-      ? 'Flagged: Promising guaranteed yields or risk-free financial returns violates SEC/FINRA and FTC marketing compliance.'
-      : 'Passed: No misleading guaranteed returns or risk-free yield promises detected.',
-  });
+  let hasCredentialRisk = false;
+  let credentialWarning: string | undefined = undefined;
 
-  // Check 2: No personalized financial advice without disclaimers
-  const givesFinancialAdvice = /you\s+should\s+(invest|buy|sell|put\s+your\s+money)\s+in/i.test(text) ||
-    /personal(ly)?\s+recommend\s+for\s+your\s+tax/i.test(text);
+  if (hasPII) {
+    hasCredentialRisk = true;
+    score -= 65;
+    credentialWarning = '⚠️ Never share verification codes or account credentials. VeloFin representatives will never request your one-time code or password.';
+    flaggedIssues.push({
+      id: 'issue-credential-pii',
+      category: 'Credential & PII Protection',
+      severity: 'critical',
+      title: 'Credential or Verification Code Exposure Detected',
+      explanation: 'Requests to collect, provide, or repeat one-time passwords (OTP), PINs, passwords, or credit card numbers violate financial authentication security policies.',
+      flaggedPhrase: hasSSNPattern ? 'SSN Pattern (Masked)' : hasCardPattern ? 'Card Number (Masked)' : 'OTP / Verification Code Request',
+      recommendation: 'Remove credential references. Display prominent warning: "Never share verification codes or account credentials."',
+    });
 
-  checks.push({
-    name: 'Personalized Financial & Tax Advice',
-    passed: !givesFinancialAdvice,
-    explanation: givesFinancialAdvice
-      ? 'Flagged: Content appears to dispense individual financial/tax guidance rather than general product marketing.'
-      : 'Passed: Content maintains neutral product education without individual financial advice.',
-  });
+    checks.push({
+      name: 'PII & Sensitive Credential Shield',
+      passed: false,
+      explanation: 'Critical Flag: Request or text contains/requests OTPs, passwords, PINs, or raw financial credentials.',
+    });
+  } else {
+    checks.push({
+      name: 'PII & Sensitive Credential Shield',
+      passed: true,
+      explanation: 'Passed: No unmasked Social Security, card numbers, OTPs, or private credential strings detected.',
+    });
+  }
 
-  // Check 3: Sensitive PII avoidance
-  const hasSSNPattern = /\b\d{3}-\d{2}-\d{4}\b/.test(text);
-  const hasCardPattern = /\b(?:\d{4}[ -]?){3}\d{4}\b/.test(text);
-  const hasPII = hasSSNPattern || hasCardPattern;
+  // Check 2: No guaranteed returns or unrealistic yield promises
+  const hasGuaranteedReturn = /guarantee(d)?\s+(return|profit|yield|rate|gain)/i.test(lower) ||
+    /risk-free\s+(investment|return|yield)/i.test(lower) ||
+    /(100%|surefire)\s+(profit|success)/i.test(lower);
 
-  checks.push({
-    name: 'PII & Sensitive Credential Shield',
-    passed: !hasPII,
-    explanation: hasPII
-      ? 'Critical Flag: Potential Social Security Number or credit card number sequence detected.'
-      : 'Passed: No unmasked Social Security, card, or private credential strings detected.',
-  });
+  if (hasGuaranteedReturn) {
+    score -= 35;
+    flaggedIssues.push({
+      id: 'issue-guaranteed-yield',
+      category: 'Return Guarantees',
+      severity: 'high',
+      title: 'Prohibited Guaranteed Return Claim',
+      explanation: 'Promising guaranteed yields or risk-free financial returns violates SEC/FINRA and FTC marketing compliance.',
+      flaggedPhrase: 'Guaranteed / risk-free return phrasing',
+      recommendation: 'Disclose all yields as variable and subject to market conditions.',
+    });
+
+    checks.push({
+      name: 'Guaranteed Returns / Zero-Risk Claims',
+      passed: false,
+      explanation: 'Flagged: Promising guaranteed yields or risk-free financial returns violates SEC/FINRA and FTC marketing compliance.',
+    });
+  } else {
+    checks.push({
+      name: 'Guaranteed Returns / Zero-Risk Claims',
+      passed: true,
+      explanation: 'Passed: No misleading guaranteed returns or risk-free yield promises detected.',
+    });
+  }
+
+  // Check 3: No personalized financial advice without disclaimers
+  const givesFinancialAdvice = /you\s+should\s+(invest|buy|sell|put\s+your\s+money)\s+in/i.test(lower) ||
+    /personal(ly)?\s+recommend\s+for\s+your\s+tax/i.test(lower);
+
+  if (givesFinancialAdvice) {
+    score -= 25;
+    flaggedIssues.push({
+      id: 'issue-financial-advice',
+      category: 'Unregistered Advisory',
+      severity: 'moderate',
+      title: 'Personalized Financial or Tax Advice',
+      explanation: 'Content appears to dispense individual financial/tax guidance rather than general product marketing.',
+      flaggedPhrase: 'Individual advisory directive',
+      recommendation: 'Frame as educational overview and advise consulting an independent financial advisor or CPA.',
+    });
+
+    checks.push({
+      name: 'Personalized Financial & Tax Advice',
+      passed: false,
+      explanation: 'Flagged: Content appears to dispense individual financial/tax guidance rather than general product marketing.',
+    });
+  } else {
+    checks.push({
+      name: 'Personalized Financial & Tax Advice',
+      passed: true,
+      explanation: 'Passed: Content maintains neutral product education without individual financial advice.',
+    });
+  }
 
   // Check 4: Sensitive customer support escalation detection
-  const isSensitiveSupportIssue = /fraud|unauthorized|stolen|hacked|freeze|frozen|subpoena|regulatory\s+audit|lawsuit/i.test(text);
-  const routesToHuman = /human|representative|support\s+desk|compliance\s+officer|security\s+team|official\s+status|ticket/i.test(text);
+  const isSensitiveSupportIssue = /fraud|unauthorized|stolen|hacked|freeze|frozen|dispute|subpoena|regulatory\s+audit|lawsuit/i.test(lower);
+  const routesToHuman = /human|representative|support\s+desk|compliance\s+officer|security\s+team|official\s+status|ticket|concierge/i.test(lower);
+  let requiresHumanEscalation = false;
 
-  checks.push({
-    name: 'Sensitive Inquiry Safe-Routing',
-    passed: !isSensitiveSupportIssue || routesToHuman,
-    explanation: isSensitiveSupportIssue && !routesToHuman
-      ? 'Warning: Inquiry mentions fraud, frozen funds, or security issues but does not route to human compliance representatives.'
-      : 'Passed: Sensitive account security matters are properly routed or not present.',
-  });
+  if (isSensitiveSupportIssue) {
+    requiresHumanEscalation = true;
+    if (!routesToHuman) {
+      score -= 30;
+      flaggedIssues.push({
+        id: 'issue-human-escalation',
+        category: 'Sensitive Support Routing',
+        severity: 'high',
+        title: 'Missing Human Escalation for Sensitive Inquiry',
+        explanation: 'Inquiry mentions fraud, frozen funds, or security dispute without routing to human compliance personnel.',
+        recommendation: 'Refer customer immediately to the dedicated Human Security & Compliance Desk.',
+      });
+      checks.push({
+        name: 'Sensitive Inquiry Safe-Routing',
+        passed: false,
+        explanation: 'Warning: Inquiry mentions fraud, frozen funds, or security issues but does not route to human compliance representatives.',
+      });
+    } else {
+      checks.push({
+        name: 'Sensitive Inquiry Safe-Routing',
+        passed: true,
+        explanation: 'Passed: Sensitive account security matters are properly routed to accredited human representatives.',
+      });
+    }
+  } else {
+    checks.push({
+      name: 'Sensitive Inquiry Safe-Routing',
+      passed: true,
+      explanation: 'Passed: Standard inquiry without urgent fraud escalation required.',
+    });
+  }
 
   // Check 5: Illustrative disclaimer presence
-  const hasDisclaimer = /illustrative|prototype|hypothetical|sample|not\s+an\s+official|terms\s+apply|subject\s+to\s+approval/i.test(text);
-  checks.push({
-    name: 'Illustrative Prototype Disclosures',
-    passed: hasDisclaimer,
-    explanation: hasDisclaimer
-      ? 'Passed: Appropriate disclaimer acknowledging illustrative sample information was found.'
-      : 'Recommended: Ensure an explicit "Illustrative Prototype / Not an Official Offer" disclaimer is attached.',
-  });
+  const hasDisclaimer = /illustrative|prototype|hypothetical|sample|not\s+an\s+official|terms\s+apply|subject\s+to\s+approval|fdic/i.test(lower);
+  if (!hasDisclaimer) {
+    score -= 10;
+    checks.push({
+      name: 'Illustrative Prototype Disclosures',
+      passed: false,
+      explanation: 'Recommended: Ensure an explicit "Illustrative Prototype / Not an Official Offer" disclaimer is attached.',
+    });
+  } else {
+    checks.push({
+      name: 'Illustrative Prototype Disclosures',
+      passed: true,
+      explanation: 'Passed: Appropriate disclaimer acknowledging illustrative sample information was found.',
+    });
+  }
 
-  const passedCount = checks.filter(c => c.passed).length;
-  const score = Math.round((passedCount / checks.length) * 100);
+  const finalScore = Math.max(5, Math.min(100, score));
+  const riskLevel = finalScore >= 90 ? 'low' : finalScore >= 70 ? 'moderate' : finalScore >= 40 ? 'high' : 'critical';
 
   return {
-    passed: score >= 80,
-    score,
+    passed: finalScore >= 70 && !hasCredentialRisk,
+    score: finalScore,
+    riskLevel,
     checks,
-    disclaimer: '⚠️ FinTech Regulatory Notice: All VeloFin products, rates, fees, and metrics are hypothetical prototypes for demonstration purposes. Yield rates are variable and illustrative.',
+    flaggedIssues,
+    hasCredentialRisk,
+    requiresHumanEscalation,
+    credentialWarning,
+    disclaimer: '⚠️ FinTech Regulatory Notice: Automated risk indicator for guidance only. All VeloFin products, rates, fees, and metrics are hypothetical prototypes for demonstration purposes.',
   };
 }
 
@@ -282,6 +396,32 @@ ${missingParams.map(p => `> - **Missing:** ${p}`).join('\n')}
 
 ---
 `;
+  }
+
+  // Check for Credential / OTP Request in user prompt
+  if (/otp|verification\s*code|auth\s*code|passcode|password|cvv/i.test(req.prompt)) {
+    return {
+      content: `${missingInfoSection}### ⚠️ Security Alert: Verification Codes & Account Credentials
+
+> **CRITICAL SECURITY WARNING:**  
+> **Never share verification codes, one-time passcodes (OTPs), PINs, or account credentials.**  
+> VeloFin staff, automated agents, and support representatives will **never** ask you for your verification code or login password.
+
+**Immediate Guidance:**
+1. **Never Disclose or Forward OTPs:** Two-factor authorization codes are exclusively for entering directly into official VeloFin login portals.
+2. **Recognizing Social Engineering:** Any request to provide or confirm an OTP over chat or email is a violation of authentication safeguards.
+3. **Escalate to Human Security Desk:** If you suspect an unauthorized access attempt or lock-out, connect directly with our Security & Fraud Concierge at **security@velofin.sample** or through the verified in-app emergency hotline.
+
+---
+*Notice: Authentication credentials and verification codes were redacted to uphold privacy safeguards.*`,
+      safeguardAudit: {
+        ...audit,
+        hasCredentialRisk: true,
+        credentialWarning: '⚠️ Never share verification codes or account credentials.',
+      },
+      isSimulated: true,
+      modelUsed: 'simulated-fintech-engine',
+    };
   }
 
   // Handle sensitive customer support questions
