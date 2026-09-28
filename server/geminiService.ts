@@ -131,23 +131,39 @@ export async function generateAnalyticsInsights(metricsData: any, userQuery?: st
   }
 
   try {
+    const isSample = metricsData.isSampleData === true || (!metricsData.isUserData && !metricsData.userEntered);
+    const dataSourceLabel = isSample ? 'Illustrative Benchmark Sample Data' : 'User-Entered Campaign Figures';
+
+    const trafficVal = metricsData.traffic?.value ?? metricsData.traffic ?? '—';
+    const ctrVal = metricsData.ctr?.value ?? metricsData.ctr ?? '—';
+    const convVal = metricsData.conversionRate?.value ?? metricsData.conversionRate ?? '—';
+    const cacVal = metricsData.cac?.value ?? metricsData.cac ?? '—';
+    const roasVal = metricsData.roas?.value ?? metricsData.roas ?? '—';
+    const emailVal = metricsData.emailOpenRate?.value ?? metricsData.emailOpenRate ?? '—';
+    const clvVal = metricsData.clv?.value ?? metricsData.clv ?? '—';
+    const ltvCacVal = metricsData.ltvCacRatio?.value ?? metricsData.ltvCacRatio ?? '—';
+
     const prompt = `
-Current Reporting Period: ${metricsData.period || 'Last 30 Days'}
-Aggregated Metrics (Illustrative Sample Data):
-- Website Traffic: ${metricsData.traffic?.toLocaleString()} unique visitors
-- Click-Through Rate (CTR): ${metricsData.ctr}%
-- Conversion Rate: ${metricsData.conversionRate}%
-- Customer Acquisition Cost (CAC): $${metricsData.cac}
-- Return on Ad Spend (ROAS): ${metricsData.roas}x
-- Email Open Rate: ${metricsData.emailOpenRate}%
-- Customer Lifetime Value (CLV): $${metricsData.clv}
-- LTV:CAC Ratio: ${(metricsData.clv / metricsData.cac).toFixed(2)}x
+Current Reporting Period: ${metricsData.periodLabel || metricsData.period || 'Current Period'}
+Data Source Context: ${dataSourceLabel} (${isSample ? 'Mock illustrative figures for testing' : 'Actual figures manually entered by the user'})
 
-Top Channels by Spend:
-${JSON.stringify(metricsData.channels, null, 2)}
+Aggregated Performance Figures:
+- Website Traffic: ${trafficVal} visits
+- Click-Through Rate (CTR): ${ctrVal}%
+- Conversion Rate: ${convVal}%
+- Customer Acquisition Cost (CAC): $${cacVal}
+- Return on Ad Spend (ROAS): ${roasVal}x
+- Email Open Rate: ${emailVal}%
+- Estimated Customer Lifetime Value (CLV): $${clvVal}
+- LTV:CAC Ratio: ${ltvCacVal}x
 
-User Specific Question (if any):
+Channel Breakdown:
+${JSON.stringify(metricsData.channels || [], null, 2)}
+
+User Question or Directive:
 ${userQuery || 'Provide an executive summary explaining key performance trends and 3 prioritized practical campaign improvements with supporting metrics.'}
+
+Important note: If Data Source is "User-Entered Campaign Figures", explicitly evaluate the user's entered campaign numbers and do not describe them as sample benchmarks. If Data Source is "Illustrative Benchmark Sample Data", note that the figures are illustrative demo samples.
 `;
 
     const response = await ai.models.generateContent({
@@ -492,51 +508,61 @@ What is your current treasury distribution strategy? Let's discuss in the commen
 }
 
 function generateSimulatedAnalyticsResponse(metricsData: any, userQuery?: string) {
-  const cac = metricsData.cac || 142.5;
-  const clv = metricsData.clv || 1850;
-  const roas = metricsData.roas || 3.85;
-  const ltvCacRatio = (clv / cac).toFixed(2);
-  const ctr = metricsData.ctr || 3.42;
+  const isSample = metricsData.isSampleData === true || (!metricsData.isUserData && !metricsData.userEntered);
+  const dataSourceLabel = isSample ? 'Illustrative Benchmark Sample Data' : 'User-Entered Campaign Figures';
+
+  const cac = metricsData.cac?.value ?? metricsData.cac ?? '142.50';
+  const clv = metricsData.clv?.value ?? metricsData.clv ?? '1850';
+  const roas = metricsData.roas?.value ?? metricsData.roas ?? '3.85';
+  const ctr = metricsData.ctr?.value ?? metricsData.ctr ?? '3.42';
+  const conversionRate = metricsData.conversionRate?.value ?? metricsData.conversionRate ?? '4.15';
+  const emailOpenRate = metricsData.emailOpenRate?.value ?? metricsData.emailOpenRate ?? '28.7';
+  const ltvCacRatio = metricsData.ltvCacRatio?.value ?? (Number(cac) > 0 ? (Number(clv) / Number(cac)).toFixed(2) : '—');
 
   let queryAnalysis = '';
   if (userQuery) {
     queryAnalysis = `\n**Response to your query:** "${userQuery}"\n`;
   }
 
+  const channelsList = metricsData.channels || [];
+  const topChannel = channelsList[0]?.name || 'Top Paid Channel';
+  const topChannelRoas = channelsList[0]?.roas || roas;
+
+  const dataNotice = isSample 
+    ? `*⚠️ Benchmark Notice: These observations evaluate illustrative demo sample data. Hypotheses should be tested in controlled cohorts rather than assumed as guaranteed outcomes.*`
+    : `*📊 User-Entered Data Notice: Analysis is generated directly from your manually entered campaign totals (${metricsData.campaigns?.length || 'entered'} campaigns). Adjust figures or add new campaign periods to update insights.*`;
+
   return {
-    insights: `### 📈 Executive Performance Analysis (${metricsData.period || 'Last 30 Days'})
+    insights: `### 📈 Performance Analysis: ${metricsData.periodLabel || metricsData.period || 'Current Reporting Window'}
+**Data Source:** ${dataSourceLabel}
 ${queryAnalysis}
 **Executive Summary:**
-Across the current reporting window, the acquisition engine shows strong unit economic health, evidenced by an **LTV:CAC ratio of ${ltvCacRatio}x** (healthy benchmark for B2B FinTech is 3.0x - 5.0x). However, conversion efficiency varies sharply by acquisition channel.
+Across the selected reporting window, your acquisition setup records an overall **ROAS of ${roas}x** and a **blended CAC of $${cac}**. With an estimated LTV:CAC multiplier of **${ltvCacRatio}x**, unit economics demonstrate ${Number(ltvCacRatio) >= 3 ? 'healthy sustainability above standard industry targets (3.0x+)' : 'an opportunity for acquisition cost refinement'}.
 
 ---
 
-### 💡 3 Prioritized Campaign Improvements
+### 💡 3 Actionable Recommendations from Current Figures
 
-#### 1. Reallocate 20% of Paid Search Budget to LinkedIn B2B CFO Audience
-- **Supporting Metrics:** 
-  - LinkedIn Ads deliver a higher average contract value despite higher CPC ($210 CAC vs $1,850 CLV = 8.8x ratio).
-  - Paid Search CAC rose to $164.20 while Search CTR plateaued at 2.9%.
+#### 1. Scale High-Efficiency Acquisition Channels
+- **Observed Metrics:** Top channel (${topChannel}) is delivering ${topChannelRoas}x ROAS with strong conversion efficiency.
 - **Actionable Hypothesis to Test:** 
-  Run a 14-day 80/20 A/B test reallocating $4,000 from generic search keywords ("business bank account") to title-targeted LinkedIn Sponsored Content ("Head of Finance", "Startup CFO").
+  Gradually increase weekly allocation by 10-15% on high-performing segments while monitoring marginal CAC stability.
 - **Anticipated Impact:** High | **Risk Level:** Low
 
-#### 2. Address Mid-Funnel Drop-Off (KYC Initiation to First Deposit)
-- **Supporting Metrics:**
-  - Overall site Conversion Rate is healthy at ${metricsData.conversionRate}%, but the funnel reveals a 38% drop-off between KYC identity submission and initial treasury deposit.
-- **Actionable Hypothesis to Test:**
-  Implement an automated 3-part educational email drip highlighting the $5M FDIC pass-through sweep feature within 24 hours of KYC approval.
-- **Anticipated Impact:** High | **Risk Level:** Minimal
+#### 2. Address Conversion Funnel Drop-Off
+- **Observed Metrics:** Blended visitor conversion rate is currently ${conversionRate}%, with opportunities between landing page traffic and customer activation.
+- **Actionable Hypothesis to Test:** 
+  Implement targeted educational nurture copy emphasizing product security and fast onboarding to accelerate initial deposit completion.
+- **Anticipated Impact:** Moderate | **Risk Level:** Minimal
 
-#### 3. Optimize Email Onboarding Open Rate via Value-First Subject Lines
-- **Supporting Metrics:**
-  - Email Open Rate stands at ${metricsData.emailOpenRate}%, which is within normal bounds but shows 4.2% fatigue on sequence emails #3 and #4.
-- **Actionable Hypothesis to Test:**
-  A/B test subject lines focusing on specific savings/yield metrics (e.g. "How CloudScale saved $14k in FX fees") versus generic welcome copy.
+#### 3. Optimize Ad Creative & Messaging Alignment
+- **Observed Metrics:** Current CTR stands at ${ctr}%, with email engagement at ${emailOpenRate}%.
+- **Actionable Hypothesis to Test:** 
+  A/B test value-first value propositions (e.g. quantified runway impact and multi-bank FDIC protections) against generic feature lists.
 - **Anticipated Impact:** Moderate | **Risk Level:** Very Low
 
 ---
-*⚠️ Compliance Transparency Note: All figures are illustrative sample data for demonstration. Recommendations represent directional hypotheses to validate through controlled A/B testing and do not guarantee future commercial outcomes.*`,
+${dataNotice}`,
     isSimulated: true,
     modelUsed: 'simulated-analytics-engine',
   };

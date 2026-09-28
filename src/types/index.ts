@@ -47,17 +47,44 @@ export interface SavedDraft {
 export interface CampaignData {
   id: string;
   name: string;
-  channel: 'Paid Search' | 'LinkedIn B2B' | 'Paid Social' | 'Email Nurture' | 'Content/SEO' | 'Referral';
+  channel: string;
   targetSegment: string;
   spend: number;
   impressions: number;
   clicks: number;
-  ctr: number; // percentage e.g. 3.4
+  ctr: number | string; // percentage e.g. 3.4 or '—'
   conversions: number;
-  cac: number; // dollars e.g. 142.50
-  roas: number; // e.g. 3.8
+  cac: number | string; // dollars e.g. 142.50 or '—'
+  roas: number | string; // e.g. 3.8 or '—'
   status: 'Active' | 'Paused' | 'Optimizing';
   product: string;
+  date?: string; // e.g. '2026-09-18'
+  websiteVisits?: number;
+  newCustomers?: number;
+  attributedRevenue?: number;
+  emailDelivered?: number;
+  emailOpens?: number;
+  estimatedLtv?: number;
+}
+
+export interface UserCampaign {
+  id: string;
+  name: string;
+  channel: string;
+  date: string; // YYYY-MM-DD
+  spend: number; // ad spend ($)
+  impressions: number;
+  clicks: number;
+  websiteVisits: number;
+  newCustomers: number; // new customers acquired
+  attributedRevenue: number; // ($)
+  emailDelivered?: number;
+  emailOpens?: number;
+  estimatedLtv?: number;
+  targetSegment?: string;
+  product?: string;
+  status?: 'Active' | 'Paused' | 'Optimizing';
+  createdAt?: string;
 }
 
 export interface ChannelMetric {

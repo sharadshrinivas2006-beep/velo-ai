@@ -53,40 +53,54 @@ export async function requestAnalyticsAdvisor(metrics: any, query?: string): Pro
     return await res.json();
   } catch (err: any) {
     console.warn('Analytics Advisor request failed, falling back to client synthesis:', err?.message);
+    const isSample = metrics?.isSampleData === true || (!metrics?.isUserData && !metrics?.userEntered);
+    const cacVal = metrics?.cac?.value ?? metrics?.cac ?? '142.50';
+    const clvVal = metrics?.clv?.value ?? metrics?.clv ?? '1850';
+    const roasVal = metrics?.roas?.value ?? metrics?.roas ?? '3.85';
+    const ltvCacVal = metrics?.ltvCacRatio?.value ?? (Number(cacVal) > 0 ? (Number(clvVal) / Number(cacVal)).toFixed(2) : '—');
+    const openRateVal = metrics?.emailOpenRate?.value ?? '28.7';
+    const topChannel = metrics?.channels?.[0]?.name || 'Top Acquisition Channel';
+    const topChannelRoas = metrics?.channels?.[0]?.roas || roasVal;
+
+    const sourceContext = isSample ? 'Illustrative Benchmark Sample Data' : 'User-Entered Campaign Figures';
+    const disclaimer = isSample
+      ? '*⚠️ Compliance Disclosure: All metrics and figures are illustrative demo samples. Suggestions represent hypotheses to test in controlled cohorts, not guaranteed business outcomes.*'
+      : `*📊 User-Entered Campaign Data Notice: Insights generated from your ${metrics?.campaigns?.length || 'entered'} manual campaign entries. Adjust records to dynamically update performance analysis.*`;
+
     return {
-      insights: `### 📈 Executive Performance Analysis (${metrics.periodLabel || 'Current Period'})
+      insights: `### 📈 Performance Analysis (${metrics?.periodLabel || 'Current Period'})
+**Data Source:** ${sourceContext}
 
 **Executive Summary:**
-Across the selected reporting window, your FinTech acquisition engine shows healthy unit economics with a **CLV:CAC multiplier of ${(metrics.clv?.value / metrics.cac?.value).toFixed(2)}x**. The blended CAC of $${metrics.cac?.value} reflects solid channel diversification, though optimization opportunities remain.
+Across the selected reporting window, your acquisition setup records an overall **ROAS of ${roasVal}x** and a blended **CAC of $${cacVal}**. With an estimated LTV:CAC multiplier of **${ltvCacVal}x**, unit economics demonstrate ${Number(ltvCacVal) >= 3 ? 'sustainable health (above standard 3x benchmark)' : 'actionable headroom for channel tuning'}.
 
 ---
 
 ### 💡 3 Prioritized Campaign Improvements
 
-#### 1. Reallocate 15-20% of Paid Search Budget to LinkedIn B2B CFO Audiences
+#### 1. Reallocate Budget Toward Highest-ROAS Channels
 - **Supporting Metrics:** 
-  - LinkedIn Ads deliver a higher ROAS (${metrics.channels?.[1]?.roas || 4.6}x vs ${metrics.channels?.[0]?.roas || 3.4}x on Paid Search).
-  - Search CAC is elevated at $${metrics.channels?.[0]?.cac || 164.20} vs $${metrics.channels?.[1]?.cac || 128.50} on LinkedIn.
+  - ${topChannel} currently delivers a strong ROAS of ${topChannelRoas}x.
 - **Actionable Hypothesis to Test:** 
-  Reallocate $4,000 from high-CPC generic search terms into decision-maker targeted LinkedIn Sponsored Content.
+  Gradually increase weekly allocation by 10-15% into top-performing channels while monitoring blended acquisition stability.
 - **Anticipated Impact:** High | **Risk Level:** Low
 
-#### 2. Address Post-KYC Conversion Drop-Off
+#### 2. Address Funnel Conversion Drop-Off
 - **Supporting Metrics:** 
-  - Funnel demonstrates a ~36% drop-off between KYC identity submission and initial treasury deposit.
+  - Conversion rate across recorded touchpoints is currently ${metrics?.conversionRate?.value ?? '—'}%.
 - **Actionable Hypothesis to Test:** 
-  Deploy a 3-step educational email nurture emphasizing $5M FDIC pass-through sweep security within 4 hours of KYC approval.
+  Deploy targeted email or remarketing sequences to reduce friction between initial landing visits and customer activation.
 - **Anticipated Impact:** High | **Risk Level:** Minimal
 
-#### 3. Refresh Email Subject Lines with Quantified Proof
+#### 3. Refresh Creative Copy with Value-First Metrics
 - **Supporting Metrics:** 
-  - Email Open Rate is currently ${metrics.emailOpenRate?.value}%, with minor decay in later campaign drips.
+  - Open rate / CTR stands at ${openRateVal}%.
 - **Actionable Hypothesis to Test:** 
-  Replace generic headlines with concrete metrics (e.g. "How Seed Founders Earn 4.85% Illustrative APY on Idle Reserves").
+  A/B test clear quantitative value propositions (e.g. automated FDIC sweep protections and cash management yields) against generic product descriptions.
 - **Anticipated Impact:** Moderate | **Risk Level:** Very Low
 
 ---
-*⚠️ Compliance Disclosure: All metrics and figures are illustrative demo samples. Suggestions represent hypotheses to test in controlled cohorts, not guaranteed business outcomes.*`,
+${disclaimer}`,
       isSimulated: true,
       modelUsed: 'client-synthesizer',
     };

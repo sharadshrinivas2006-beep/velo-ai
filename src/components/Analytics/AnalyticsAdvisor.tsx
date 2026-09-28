@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   RotateCw, 
   Send, 
-  ArrowUpRight
+  ArrowUpRight,
+  Database,
+  Layers
 } from 'lucide-react';
 import { DashboardMetrics } from '../../types';
 import { requestAnalyticsAdvisor } from '../../services/api';
@@ -10,18 +12,22 @@ import { FormattedContent } from '../FormattedContent';
 
 interface AnalyticsAdvisorProps {
   metrics: DashboardMetrics;
+  isSampleData?: boolean;
+  userCampaignCount?: number;
   onSelectCampaignForAgent?: (campaignName: string, channel: string) => void;
 }
 
 const SAMPLE_QUESTIONS = [
-  'Why is Paid Search CAC higher than LinkedIn?',
+  'Why is Paid Search CAC higher than other channels?',
   'Explain our LTV:CAC ratio in plain language.',
-  'How can we reduce drop-off during account onboarding?',
+  'How can we reduce drop-off during onboarding?',
   'Which channel shows the highest acquisition efficiency?',
 ];
 
 export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({ 
   metrics,
+  isSampleData = false,
+  userCampaignCount = 0,
 }) => {
   const [insights, setInsights] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -30,7 +36,13 @@ export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({
   const fetchInsights = async (query?: string) => {
     setIsLoading(true);
     try {
-      const res = await requestAnalyticsAdvisor(metrics, query);
+      const enrichedMetrics = {
+        ...metrics,
+        isSampleData,
+        isUserData: !isSampleData,
+        campaignCount: isSampleData ? metrics.campaigns.length : userCampaignCount,
+      };
+      const res = await requestAnalyticsAdvisor(enrichedMetrics, query);
       setInsights(res.insights);
     } catch (err) {
       console.error('Failed to load insights:', err);
@@ -39,9 +51,10 @@ export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({
     }
   };
 
+  // Re-fetch insights whenever metrics period, campaigns length, or data source mode changes
   useEffect(() => {
     fetchInsights();
-  }, [metrics.period]);
+  }, [metrics.period, metrics.campaigns.length, isSampleData]);
 
   const handleAskQuestion = (q: string) => {
     setUserQuery(q);
@@ -51,18 +64,33 @@ export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({
   return (
     <div className="bg-white border border-[#D8E2EA] rounded-lg p-5 shadow-sm space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#D8E2EA]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#D8E2EA]">
         <div>
-          <h3 className="text-sm font-semibold text-[#202938]">Analytics Insights &amp; Recommendations</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[#202938]">Analytics Insights &amp; Recommendations</h3>
+            {isSampleData ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#EAF0F5] text-[#426A8C] border border-[#D8E2EA]">
+                <Layers className="w-3 h-3" />
+                Sample Benchmark
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#EAF0F5] text-[#202938] border border-[#D8E2EA]">
+                <Database className="w-3 h-3 text-[#426A8C]" />
+                User-Entered ({userCampaignCount} campaigns)
+              </span>
+            )}
+          </div>
           <p className="text-xs text-[#667085] mt-0.5">
-            Observations and campaign suggestions based on the reporting period data.
+            {isSampleData 
+              ? 'Analyzing illustrative prototype benchmark metrics.'
+              : `Analyzing your ${userCampaignCount} user-entered campaign records.`}
           </p>
         </div>
 
         <button
           onClick={() => fetchInsights(userQuery || undefined)}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#202938] bg-[#F8FAFC] hover:bg-[#EAF0F5] border border-[#D8E2EA] transition disabled:opacity-50 self-start sm:self-auto"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#202938] bg-[#F8FAFC] hover:bg-[#EAF0F5] border border-[#D8E2EA] transition disabled:opacity-50 self-start sm:self-auto shadow-2xs"
         >
           <RotateCw className={`w-3.5 h-3.5 text-[#426A8C] ${isLoading ? 'animate-spin' : ''}`} />
           <span>Refresh Analysis</span>
@@ -74,7 +102,7 @@ export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({
         {isLoading ? (
           <div className="py-8 text-center text-[#667085] text-xs flex items-center justify-center gap-2">
             <RotateCw className="w-4 h-4 animate-spin text-[#426A8C]" />
-            <span className="text-[#202938] font-medium">Analyzing metric relationships...</span>
+            <span className="text-[#202938] font-medium">Analyzing current metrics and unit economics...</span>
           </div>
         ) : (
           <FormattedContent content={insights} />
@@ -84,7 +112,7 @@ export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({
       {/* Suggested Questions */}
       <div className="space-y-2">
         <div className="text-xs font-medium text-[#667085]">
-          Suggested Questions:
+          Suggested Analytical Queries:
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
           {SAMPLE_QUESTIONS.map((q, idx) => (
@@ -115,7 +143,7 @@ export const AnalyticsAdvisor: React.FC<AnalyticsAdvisorProps> = ({
           type="text"
           value={userQuery}
           onChange={(e) => setUserQuery(e.target.value)}
-          placeholder="Ask a question about current campaign performance..."
+          placeholder={`Ask about your ${isSampleData ? 'sample' : 'entered'} campaign figures (e.g. "How can I improve my ROAS?")...`}
           className="flex-1 bg-white border border-[#D8E2EA] rounded-md px-3 py-1.5 text-xs text-[#202938] placeholder-[#667085] focus:outline-none focus:ring-1 focus:ring-[#426A8C]"
         />
         <button
