@@ -71,7 +71,7 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), fintechApiPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname || '.', '.'),
       },
     },
     server: {
