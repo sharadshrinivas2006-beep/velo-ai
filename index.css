@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-page: #EAF0F5;
+    --card-bg: #FFFFFF;
+    --text-primary: #202938;
+    --text-secondary: #667085;
+    --accent: #426A8C;
+    --accent-hover: #355571;
+    --accent-light: #EBF1F6;
+    --border-color: #D8E2EA;
+  }
+
+  body {
+    background-color: #EAF0F5;
+    color: #202938;
+    min-height: 100vh;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    background-color: #DFE9F2;
+    color: #202938;
+  }
+}
+
+/* Crisp subtle scrollbars for soft blue-gray theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #EAF0F5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C4D3E0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A2B7CA;
+}
