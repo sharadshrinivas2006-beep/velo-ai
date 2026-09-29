@@ -10,6 +10,12 @@ import { Check } from 'lucide-react';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'agent' | 'analytics' | 'safeguards' | 'safety_history'>('agent');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [draftToLoad, setDraftToLoad] = useState<{
+    content: string;
+    title: string;
+    channel: string;
+    mode?: any;
+  } | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -21,6 +27,17 @@ export default function App() {
     showToast(`Loaded "${campaign.name}" for copy optimization`);
   };
 
+  const handleOpenDraftInAgent = (draft: {
+    content: string;
+    title: string;
+    channel: string;
+    mode?: any;
+  }) => {
+    setDraftToLoad(draft);
+    setActiveTab('agent');
+    showToast(`Opened "${draft.title}" in Marketing Agent`);
+  };
+
   return (
     <div className="min-h-screen bg-[#EAF0F5] text-[#202938] flex flex-col font-sans">
       {/* Clean White Header */}
@@ -28,9 +45,18 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1">
-        {activeTab === 'agent' && <AgentStudio />}
+        {activeTab === 'agent' && (
+          <AgentStudio 
+            draftToLoad={draftToLoad}
+            onClearDraftToLoad={() => setDraftToLoad(null)}
+            onNavigateToAnalytics={() => setActiveTab('analytics')}
+          />
+        )}
         {activeTab === 'analytics' && (
-          <AnalyticsDashboard onOptimizeCampaignInAgent={handleOptimizeCampaignInAgent} />
+          <AnalyticsDashboard 
+            onOptimizeCampaignInAgent={handleOptimizeCampaignInAgent}
+            onOpenDraftInAgent={handleOpenDraftInAgent}
+          />
         )}
         {activeTab === 'safeguards' && <SafeguardsInspector />}
         {activeTab === 'safety_history' && (

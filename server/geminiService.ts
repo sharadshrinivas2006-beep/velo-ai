@@ -95,24 +95,48 @@ export async function generateMarketingContent(req: MarketingAgentRequest) {
   const localAudit = auditSafeguards(req.prompt);
 
   if (!ai) {
-    // Return high-quality realistic simulated FinTech response
-    return generateSimulatedMarketingResponse(req, localAudit);
+    // Return high-quality realistic simulated FinTech response labeled as simulated
+    const sim = generateSimulatedMarketingResponse(req, localAudit);
+    return {
+      ...sim,
+      isSimulated: true,
+      modelUsed: 'simulated-fintech-engine (GEMINI_API_KEY unconfigured)',
+    };
   }
 
   try {
+    const mode = req.parameters?.writingMode || 'marketing draft';
+    const channel = req.parameters?.channel || 'Unspecified';
+    const audience = req.parameters?.targetAudience || 'Unspecified';
+    const goal = req.parameters?.goal || 'Unspecified';
+    const tone = req.parameters?.tone || 'Professional & Modern FinTech';
+    const product = req.parameters?.product || 'General VeloFin Platform';
+
     const userPromptWithContext = `
 Task Type: ${req.type}
-Parameters Provided:
-- Channel: ${req.parameters?.channel || 'Unspecified'}
-- Target Audience: ${req.parameters?.targetAudience || 'Unspecified'}
-- Campaign Goal: ${req.parameters?.goal || 'Unspecified'}
-- Tone: ${req.parameters?.tone || 'Professional & Modern FinTech'}
-- Product: ${req.parameters?.product || 'General VeloFin Platform'}
+Writing Mode: ${mode}
+Marketing Channel: ${channel}
+Target Audience: ${audience}
+Campaign Goal: ${goal}
+Tone & Style: ${tone}
+Product Focus: ${product}
 
-User Request:
+User's Specific Prompt & Creative Directive:
+"""
 ${req.prompt}
+"""
 
-Please review if essential information is missing. If missing, highlight the gaps clearly. Then generate the requested content draft with appropriate FinTech compliance footers and labeled illustrative assumptions.
+Instructions:
+1. Generate an original, highly tailored marketing piece specifically answering the user's prompt above.
+2. Structure the content appropriately for the ${mode} writing mode:
+   - If Blog: Include a catchy title, executive summary, 2-3 detailed sections with informative subheadings, and a concrete CTA.
+   - If Email: Include Subject Line, Preview Text, personalized body copy, value proposition bullets, CTA button copy, and professional sign-off.
+   - If Advertisement: Provide 2 distinct ad variations (e.g. search copy and social/LinkedIn ad) with headlines, descriptions, and CTA buttons.
+   - If Social Media: Provide 2 distinct social copy formats (e.g. LinkedIn long-form and X/Twitter thread).
+   - If Customer Support: Provide an empathetic, compliance-safe customer response with clear action steps and human specialist contact points.
+   - If Product Recommendation: Provide tailored product recommendations with segmented fit analysis.
+3. Incorporate the specified tone (${tone}), audience (${audience}), and product (${product}).
+4. Conclude with appropriate FinTech compliance disclosures noting all rates and figures are illustrative prototypes.
 `;
 
     const response = await ai.models.generateContent({
@@ -135,7 +159,15 @@ Please review if essential information is missing. If missing, highlight the gap
     };
   } catch (error: any) {
     console.warn('Gemini API call failed, falling back to simulated engine:', error?.message);
-    return generateSimulatedMarketingResponse(req, localAudit);
+    const sim = generateSimulatedMarketingResponse(req, localAudit);
+    const isQuota = error?.message?.toLowerCase().includes('quota') || error?.message?.toLowerCase().includes('resource_exhausted');
+    return {
+      ...sim,
+      isSimulated: true,
+      modelUsed: isQuota 
+        ? 'simulated-fintech-engine (Gemini Quota Exceeded)' 
+        : 'simulated-fintech-engine (Offline Fallback)',
+    };
   }
 }
 
@@ -514,129 +546,150 @@ Select one of the segments above to generate a channel-specific campaign draft (
     };
   }
 
-  // Handle Campaign Generation (Email, Blog, Ads, Social)
-  const chosenChannel = channel?.toLowerCase() || 'email';
+  // Handle Campaign Generation (Email, Blog, Ads, Social, Recommendation, Customer Support)
+  const mode = (req.parameters?.writingMode || '').toLowerCase();
+  const chosenChannel = channel?.toLowerCase() || (mode === 'blog' ? 'blog' : mode === 'advertisement' ? 'paid ad' : mode === 'social_media' ? 'social media' : 'email');
   const effectiveProduct = product || 'VeloYield Treasury & VeloCard';
   const effectiveAudience = targetAudience || 'FinTech CFOs and Seed-stage Founders';
   const effectiveTone = tone || 'Authoritative & Data-Driven';
+  const userPromptClean = req.prompt.trim();
+
+  // Extract a clean core headline / subject from the user's prompt
+  const cleanSummary = userPromptClean
+    .replace(/^(write|create|draft|generate|make|build|provide|compose)\s+(a|an|the)?/i, '')
+    .trim();
+  const titleCaseSummary = cleanSummary.length > 3
+    ? cleanSummary.charAt(0).toUpperCase() + cleanSummary.slice(1, 60)
+    : `${effectiveProduct} Overview`;
 
   let campaignBody = '';
 
-  if (chosenChannel.includes('email')) {
-    campaignBody = `### ✉️ Email Campaign Draft
+  if (mode === 'blog' || chosenChannel.includes('blog') || chosenChannel.includes('content') || chosenChannel.includes('seo')) {
+    campaignBody = `### 📝 Blog Post: ${titleCaseSummary}
 
-**Audience:** ${effectiveAudience}  
-**Product:** ${effectiveProduct}  
+**Target Audience:** ${effectiveAudience}  
+**Focus Product:** ${effectiveProduct}  
 **Tone:** ${effectiveTone}  
+**Creative Directive:** "${userPromptClean}"
+
+#### Executive Summary
+${userPromptClean.length > 20 ? userPromptClean : `Optimizing modern financial infrastructure requires balancing capital efficiency, cash management, and rigorous operational control.`} For ${effectiveAudience}, traditional financial approaches often create unnecessary drag. Here is a practical breakdown of how modern FinTech capabilities provide strategic advantages.
+
+#### Key Discussion: Addressing the Core Challenge
+Modern finance operators face evolving market dynamics. When deploying solutions around **${effectiveProduct}**, teams must address three primary considerations:
+1. **Capital Velocity & Efficiency:** How operating balances are utilized rather than remaining stagnant in low-yield accounts.
+2. **Risk Mitigation & Control:** Maintaining liquidity and compliance without administrative friction.
+3. **Execution Clarity:** Implementing clear, data-informed workflows that deliver measurable ROI for ${effectiveAudience}.
+
+#### Strategic Implementation Blueprint
+To achieve the goal of **${goal || 'sustainable financial growth'}**, teams should adopt a staged rollout:
+- **Phase 1 (Audit & Alignment):** Map current account structures and identify idle capital or expense leakages.
+- **Phase 2 (Automated Optimization):** Activate **${effectiveProduct}** with custom thresholds and automated rule sets.
+- **Phase 3 (Continuous Monitoring):** Review weekly yield benchmarks and reconcile transaction telemetry.
+
+#### Conclusion & Actionable Takeaway
+Whether streamlining treasury or accelerating transaction speed, forward-thinking teams make every capital asset defend their operating runway.
+👉 **[Read the Full Technical Case Study & Documentation]**
 
 ---
-**Subject Line:** [Action Required] Stop letting idle cash sit at 0.05%
-**Preview Text:** How modern startup finance teams earn up to 4.85% variable APY with automated FDIC sweep.
+*Compliance Notice: This article is educational and illustrative. Figures, products, and simulated yields are for demonstration purposes.*`;
+  } else if (mode === 'advertisement' || chosenChannel.includes('ad') || chosenChannel.includes('linkedin') || chosenChannel.includes('search')) {
+    campaignBody = `### 🎯 Paid Ad Campaign Copy Suite: ${titleCaseSummary}
+
+**Target Segment:** ${effectiveAudience}  
+**Product:** ${effectiveProduct}  
+**Campaign Objective:** ${goal || 'High-Intent Acquisition'}  
+**Prompt Focus:** "${userPromptClean}"
+
+#### Option 1: B2B Sponsored Feed (LinkedIn / Professional Network)
+- **Primary Text:** Looking to solve "${userPromptClean.slice(0, 80)}"? With ${effectiveProduct}, modern finance teams unlock automated efficiency, rigorous controls, and transparent terms.
+- **Headline:** ${titleCaseSummary} | Built for ${effectiveAudience}
+- **Description:** Illustrative 4.85% variable yield sweep and smart expense controls. Zero hidden fees.
+- **Call to Action (CTA):** Learn More | Schedule Demo
+
+#### Option 2: High-Intent Search Ad (Google / Search Engine Marketing)
+- **Headline 1:** ${effectiveProduct} | Modern FinTech
+- **Headline 2:** Built for ${effectiveAudience}
+- **Headline 3:** Fast Setup · No Hidden Fees
+- **Description 1:** ${userPromptClean.slice(0, 90)}. Start in minutes with institutional security.
+- **Description 2:** Automated cash sweep, pass-through FDIC insurance eligibility up to $5M.
+- **Display URL:** velofin.sample/start/${effectiveProduct.toLowerCase().replace(/[^a-z0-9]/g, '')}
+
+---
+*Compliance Safe Note: All ad variations feature mandatory illustrative prototype disclosures.*`;
+  } else if (mode === 'social_media' || chosenChannel.includes('social') || chosenChannel.includes('twitter') || chosenChannel.includes('x')) {
+    campaignBody = `### 📱 Social Media Post Suite: ${titleCaseSummary}
+
+**Target Audience:** ${effectiveAudience}  
+**Product:** ${effectiveProduct}  
+**Tone:** ${effectiveTone}  
+**Focus:** "${userPromptClean}"
+
+#### Post 1 (LinkedIn / Long-form Thought Leadership)
+Most finance leaders focus heavily on top-line revenue, but overlook the operational efficiencies that preserve runway.
+
+Regarding **${titleCaseSummary}**:
+Too often, teams settle for legacy systems that introduce friction, high fees, and sluggish execution.
+
+With **${effectiveProduct}**, we engineered a modern approach:
+→ Direct alignment with the needs of ${effectiveAudience}
+→ Automated operational velocity and transparent pricing
+→ Real-time visibility across all balances and transactions
+
+If you're re-evaluating your stack this quarter, here's the question to ask: Is your current setup helping or hindering your growth?
+
+Let's discuss below 👇
+
+---
+#### Post 2 (X / Twitter Thread Preview)
+1/4 Quick breakdown on **${titleCaseSummary}** for modern finance teams 🧵👇
+
+2/4 The standard friction: legacy workflows create delay and hidden fees when you need agility most.
+
+3/4 The modern alternative: **${effectiveProduct}** delivers automated cash efficiency and flexible controls built for ${effectiveAudience}.
+
+4/4 Explore our interactive simulator at velofin.sample (Illustrative Prototype).
+
+---
+*Notice: Illustrative demo figures. Rates are variable.*`;
+  } else {
+    // Default to Email Campaign tailored to user prompt
+    campaignBody = `### ✉️ Email Campaign Draft: ${titleCaseSummary}
+
+**Target Audience:** ${effectiveAudience}  
+**Product Focus:** ${effectiveProduct}  
+**Tone:** ${effectiveTone}  
+**Campaign Goal:** ${goal || 'Product Adoption & Activation'}  
+**User Request:** "${userPromptClean}"
+
+---
+**Subject Line:** ${titleCaseSummary} — A smarter approach for ${effectiveAudience}  
+**Preview Text:** How ${effectiveProduct} helps modern teams address "${userPromptClean.slice(0, 60)}..."
 
 **Email Body:**
 Hi {{FirstName}},
 
-Running a high-growth company means every dollar on your balance sheet should work as hard as your engineering team. 
+When evaluating how to manage financial operations, ${effectiveAudience} frequently ask us about **${titleCaseSummary}**.
 
-Yet most commercial banks still offer near-zero return on operating reserves—silently eroding your runway against inflation.
+Traditional commercial providers often complicate this with manual paperwork, sluggish clearing times, and near-zero yield on operating reserves.
 
-With **${effectiveProduct}**, your treasury operations run on autopilot:
-• **Automated Cash Sweep:** Idle balances are swept into a vetted network of partner banks, earning an illustrative **4.85% variable APY**.
-• **Multi-Bank Coverage:** Up to **$5,000,000** in pass-through FDIC insurance eligibility through participating program institutions.
-• **Instant Liquidity:** Access your operating capital 24/7 with zero lockup penalties or hidden maintenance fees.
+With **${effectiveProduct}**, we've built a unified platform designed specifically for fast-moving teams:
+• **Tailored to Your Goal:** Purpose-built to support ${goal || 'efficient capital growth'} with zero administrative friction.
+• **Automated Efficiency:** Real-time visibility, automated multi-bank sweep, and smart spending rules.
+• **Institutional Security:** Pass-through FDIC insurance eligibility up to $5M through program partner institutions.
 
-*“VeloFin helped us extend our operating runway by 2.4 months purely through automated treasury optimization.”*  
-— *Elena Vance, VP of Finance, CloudScale Labs (Illustrative Testimonial)*
+*“Implementing ${effectiveProduct} gave us the transparency and cash velocity we needed to scale confidently.”*  
+— *Finance Director, ScaleUp Technologies (Illustrative Customer Story)*
 
-👉 **[Explore VeloYield Treasury Dashboard]** (3-minute setup)
+👉 **[Get Started with ${effectiveProduct}]** (Takes less than 3 minutes)
 
-Questions? Reply directly to this note or book a 10-minute briefing with our Treasury Engineering Team.
+Have questions about your specific requirements? Reply directly to this email to speak with our product team.
 
 Best regards,  
 The VeloFin Team
 
 ---
-*Illustrative Prototype Notice: VeloFin is a hypothetical FinTech platform. 4.85% APY is variable and based on illustrative benchmark assumptions. Funds swept into program banks are FDIC-insured up to statutory limits upon deposit.*`;
-  } else if (chosenChannel.includes('ad') || chosenChannel.includes('linkedin') || chosenChannel.includes('search')) {
-    campaignBody = `### 🎯 Paid Ad Campaign Copy Suite
-
-**Target Segment:** ${effectiveAudience}  
-**Product:** ${effectiveProduct}  
-
-#### 1. LinkedIn Sponsored Content (B2B CFOs)
-**Headline:** Upgrade Your Startup Treasury with Automated Cash Sweep  
-**Primary Text:** Traditional banks keep the yield on your runway. VeloFin sweeps idle operating capital into partner banks earning up to 4.85% illustrative variable APY with up to $5M FDIC insurance eligibility. Zero lockups. Full operational liquidity.  
-**CTA Button:** Learn More | Schedule Demo  
-**Accompanying Creative Note:** Clean dark-mode UI mockup showing real-time yield accrual graph with badge "4.85% Illustrative Variable APY".
-
-#### 2. Google Search Responsive Ads
-- **Headline 1:** High-Yield Business Treasury | VeloFin
-- **Headline 2:** Automated Cash Management for Startups
-- **Headline 3:** Earn 4.85% Illustrative APY
-- **Description 1:** Put your startup runway to work. Multi-bank FDIC insurance sweep up to $5M.
-- **Description 2:** Built for modern SaaS and e-commerce finance teams. No hidden wire or account fees.
-- **Path:** velofin.sample/treasury/startup
-
----
-*Compliance Safe Note: All ad variations feature mandatory illustrative APY disclosures and disclaimer tags.*`;
-  } else if (chosenChannel.includes('blog')) {
-    campaignBody = `### 📝 Blog Post Draft: Educational Thought Leadership
-
-**Title:** The Modern CFO's Guide to Runway Preservation: Beyond Cutbacks
-**Target SEO Keywords:** Startup treasury management, automated cash sweep, corporate cash yield, B2B cash preservation.
-**Target Audience:** ${effectiveAudience}
-
-#### Executive Summary
-When capital costs rise, extending runway doesn't just mean reducing expenditure—it requires intelligent balance-sheet optimization. This article breaks down how forward-thinking finance teams manage operating liquidity while maximizing passive yield.
-
-#### Section 1: The Hidden Cost of Idle Commercial Balances
-Traditional commercial checking accounts often pay less than 0.10% APY. For a Series A startup holding $3,000,000 in reserves, the opportunity cost between 0.10% and an illustrative 4.85% variable yield represents over $140,000 annually—equivalent to an entire junior engineering salary.
-
-#### Section 2: How Program Bank Sweeps Protect and Preserve
-Rather than holding funds in a single regional institution, automated FinTech sweep accounts distribute deposits across a consortium of FDIC-member institutions, multiplying insurance protection up to $5M without adding administrative friction.
-
-#### Section 3: Maintaining Same-Day Liquidity
-The cardinal rule of treasury management: never sacrifice payroll liquidity for yield. Modern treasury platforms utilize intelligent buffer algorithms that maintain 60 days of operational float while sweeping surplus funds.
-
-#### Key Takeaway & Call to Action
-Don't let inflation dictate your runway timeline. Evaluate your cash yield distribution today.  
-👉 *[Download the FinTech Treasury Checklist]*
-
----
-*Disclaimer: This article provides general financial technology education and does not constitute formal tax, legal, or investment advice. Figures are illustrative.*`;
-  } else {
-    campaignBody = `### 📱 Social Media Post Suite (X / Twitter & LinkedIn)
-
-**Post 1 (LinkedIn Long-form):**
-Most startup founders spend 40 hours a week optimizing customer acquisition costs.
-Yet almost none spend 1 hour optimizing where their $2M seed round sits.
-
-If your capital is parked in a legacy bank paying 0.08%, you are leaving critical runway on the table.
-
-With **${effectiveProduct}**:
-→ Automated sweep across partner banks
-→ Up to 4.85% illustrative variable APY
-→ Pass-through FDIC protection up to $5M
-→ Zero lockup on payroll liquidity
-
-Smart finance teams make every dollar defend their runway. 
-
-What is your current treasury distribution strategy? Let's discuss in the comments 👇
-
----
-**Post 2 (X / Twitter Thread):**
-1/5 Why are top SaaS CFOs moving operating cash away from traditional checking? A 30-second breakdown on modern treasury yield 🧵👇
-
-2/5 The problem: High inflation + 0.1% legacy checking = your raised round loses purchasing power every single month.
-
-3/5 The solution: FinTech automated sweep accounts that distribute cash across dozens of FDIC partner institutions for higher variable yield + expanded coverage.
-
-4/5 The result: An illustrative 4.85% APY on $1.5M reserves yields ~$72,000/yr in non-dilutive balance sheet buffer.
-
-5/5 Check out our open-source runway preservation simulator: velofin.sample/runway (Illustrative Demo)
-
----
-*Notice: Illustrative demo figures. Yields are variable.*`;
+*Notice: VeloFin is an illustrative FinTech prototype. All products and rates depicted are for demonstration purposes.*`;
   }
 
   return {

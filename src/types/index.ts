@@ -89,6 +89,8 @@ export interface ChatMessage {
   safetyReview?: SafetyReviewResult;
   isSimulated?: boolean;
   modelUsed?: string;
+  linkedCampaignId?: string;
+  linkedCampaignName?: string;
 }
 
 export interface SavedDraft {
@@ -107,22 +109,28 @@ export interface CampaignData {
   name: string;
   channel: string;
   targetSegment: string;
-  spend: number;
-  impressions: number;
-  clicks: number;
-  ctr: number | string; // percentage e.g. 3.4 or '—'
-  conversions: number;
-  cac: number | string; // dollars e.g. 142.50 or '—'
-  roas: number | string; // e.g. 3.8 or '—'
-  status: 'Active' | 'Paused' | 'Optimizing';
+  spend: number | null;
+  impressions: number | null;
+  clicks: number | null;
+  ctr: number | string; // percentage e.g. 3.4 or '—' or 'No data'
+  conversions: number | null;
+  cac: number | string; // dollars e.g. 142.50 or '—' or 'No data'
+  roas: number | string; // e.g. 3.8 or '—' or 'No data'
+  status: 'Active' | 'Paused' | 'Optimizing' | 'Draft' | 'Ready for review';
   product: string;
   date?: string; // e.g. '2026-09-18'
-  websiteVisits?: number;
-  newCustomers?: number;
-  attributedRevenue?: number;
+  websiteVisits?: number | null;
+  newCustomers?: number | null;
+  attributedRevenue?: number | null;
   emailDelivered?: number;
   emailOpens?: number;
   estimatedLtv?: number;
+  isDraft?: boolean;
+  draftStatus?: 'Draft' | 'Ready for review';
+  draftContent?: string;
+  writingMode?: WritingMode;
+  hasPerformanceData?: boolean;
+  source?: 'marketing_agent' | 'manual' | 'csv_import' | 'sample';
 }
 
 export interface UserCampaign {
@@ -130,19 +138,25 @@ export interface UserCampaign {
   name: string;
   channel: string;
   date: string; // YYYY-MM-DD
-  spend: number; // ad spend ($)
-  impressions: number;
-  clicks: number;
-  websiteVisits: number;
-  newCustomers: number; // new customers acquired
-  attributedRevenue: number; // ($)
+  spend?: number; // ad spend ($)
+  impressions?: number;
+  clicks?: number;
+  websiteVisits?: number;
+  newCustomers?: number; // new customers acquired
+  attributedRevenue?: number; // ($)
   emailDelivered?: number;
   emailOpens?: number;
   estimatedLtv?: number;
   targetSegment?: string;
   product?: string;
-  status?: 'Active' | 'Paused' | 'Optimizing';
+  status?: 'Active' | 'Paused' | 'Optimizing' | 'Draft' | 'Ready for review';
   createdAt?: string;
+  isDraft?: boolean;
+  draftStatus?: 'Draft' | 'Ready for review';
+  draftContent?: string;
+  writingMode?: WritingMode;
+  hasPerformanceData?: boolean;
+  source?: 'marketing_agent' | 'manual' | 'csv_import' | 'sample';
 }
 
 export interface ChannelMetric {

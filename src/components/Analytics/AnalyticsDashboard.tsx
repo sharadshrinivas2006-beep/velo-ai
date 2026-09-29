@@ -11,7 +11,12 @@ import {
   Database,
   Layers,
   RotateCcw,
-  Check
+  Check,
+  FileText,
+  ExternalLink,
+  Eye,
+  PlusCircle,
+  X
 } from 'lucide-react';
 import { TimeRange, DashboardMetrics, CampaignData, UserCampaign } from '../../types';
 import { MOCK_ANALYTICS_DATA } from '../../data/mockAnalytics';
@@ -19,6 +24,7 @@ import { AnalyticsAdvisor } from './AnalyticsAdvisor';
 import { CampaignModal } from './CampaignModal';
 import { CsvImportExportModal } from './CsvImportExportModal';
 import { MetricFormulasModal } from './MetricFormulasModal';
+import { FormattedContent } from '../FormattedContent';
 import { 
   loadUserCampaigns, 
   saveUserCampaigns, 
@@ -32,10 +38,12 @@ import {
 
 interface AnalyticsDashboardProps {
   onOptimizeCampaignInAgent?: (campaign: CampaignData) => void;
+  onOpenDraftInAgent?: (draft: { content: string; title: string; channel: string; mode?: any }) => void;
 }
 
 export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ 
-  onOptimizeCampaignInAgent 
+  onOptimizeCampaignInAgent,
+  onOpenDraftInAgent,
 }) => {
   // Data Source mode: 'user' (user-entered campaigns) or 'sample' (mock baseline)
   const [dataSource, setDataSource] = useState<'user' | 'sample'>('user');
@@ -58,6 +66,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   const [campaignToEdit, setCampaignToEdit] = useState<UserCampaign | null>(null);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [isFormulasModalOpen, setIsFormulasModalOpen] = useState(false);
+  const [viewingDraft, setViewingDraft] = useState<CampaignData | null>(null);
   
   // Notification toast
   const [actionNotice, setActionNotice] = useState<string | null>(null);
@@ -65,6 +74,24 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 3500);
+  };
+
+  // Toggle draft status between Draft and Ready for review
+  const handleToggleDraftStatus = (campaignId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Ready for review' ? 'Draft' : 'Ready for review';
+    const updated = userCampaigns.map((c) => {
+      if (c.id === campaignId) {
+        return { 
+          ...c, 
+          draftStatus: newStatus as any, 
+          status: newStatus as any 
+        };
+      }
+      return c;
+    });
+    setUserCampaigns(updated);
+    saveUserCampaigns(updated);
+    showNotice(`Campaign status changed to "${newStatus}"`);
   };
 
   // Load user campaigns and preference on mount
@@ -734,6 +761,18 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               <option value="Referral">Referral</option>
             </select>
 
+            {/* Status Filter Dropdown */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-[#F8FAFC] border border-[#D8E2EA] rounded-md px-2.5 py-1.5 text-xs text-[#202938] focus:outline-none focus:ring-1 focus:ring-[#426A8C]"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Active">Active Only</option>
+              <option value="Draft">Drafts Only</option>
+              <option value="Ready for review">Ready for Review Only</option>
+            </select>
+
             {/* Add campaign quick trigger */}
             {dataSource === 'user' && (
               <button
@@ -757,6 +796,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               <tr>
                 <th className="px-4 py-3">Campaign Name &amp; Product</th>
                 <th className="px-3 py-3">Channel</th>
+                <th className="px-3 py-3">Status</th>
                 <th className="px-3 py-3">Reporting Date</th>
                 <th className="px-3 py-3 text-right">Ad Spend</th>
                 <th className="px-3 py-3 text-right">CTR</th>
@@ -770,12 +810,20 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               {filteredCampaigns.length > 0 ? (
                 filteredCampaigns.map((camp) => {
                   const matchingUserCampaign = userCampaigns.find((c) => c.id === camp.id);
+                  const isDraftRow = camp.isDraft || camp.hasPerformanceData === false || camp.status === 'Draft' || camp.status === 'Ready for review';
 
                   return (
-                    <tr key={camp.id} className="hover:bg-[#F8FAFC]/80 transition">
+                    <tr key={camp.id} className={`hover:bg-[#F8FAFC]/80 transition ${isDraftRow ? 'bg-[#FCFDFE]' : ''}`}>
                       {/* Name & Product */}
                       <td className="px-4 py-3 font-medium text-[#202938]">
-                        <div>{camp.name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold">{camp.name}</span>
+                          {camp.source === 'marketing_agent' && (
+                            <span className="px-1.5 py-0.2 rounded bg-[#EAF0F5] text-[#426A8C] border border-[#D8E2EA] text-[10px] font-medium" title="Linked from Marketing Agent generation">
+                              Agent Draft
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-[#667085] font-normal flex items-center gap-1.5 mt-0.5">
                           <span>{camp.product}</span>
                           {camp.targetSegment && (
@@ -794,71 +842,172 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                         </span>
                       </td>
 
+                      {/* Status with Toggle for Drafts */}
+                      <td className="px-3 py-3">
+                        {dataSource === 'user' && matchingUserCampaign && (camp.status === 'Draft' || camp.status === 'Ready for review') ? (
+                          <button
+                            onClick={() => handleToggleDraftStatus(camp.id, camp.status)}
+                            title="Click to toggle status between Draft and Ready for review"
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border transition ${
+                              camp.status === 'Ready for review'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                                : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                            }`}
+                          >
+                            <span>{camp.status}</span>
+                            <span className="text-[9px] opacity-70">⇄</span>
+                          </button>
+                        ) : (
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                              camp.status === 'Active'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : camp.status === 'Ready for review'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : camp.status === 'Draft'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-gray-100 text-gray-700 border-gray-200'
+                            }`}
+                          >
+                            {camp.status}
+                          </span>
+                        )}
+                      </td>
+
                       {/* Reporting Date */}
                       <td className="px-3 py-3 text-[#667085] font-mono text-[11px]">
                         {camp.date || '—'}
                       </td>
 
                       {/* Ad Spend */}
-                      <td className="px-3 py-3 text-right font-medium text-[#202938]">
-                        ${camp.spend.toLocaleString()}
+                      <td className="px-3 py-3 text-right">
+                        {camp.spend !== null && camp.spend !== undefined ? (
+                          <span className="font-medium text-[#202938]">${camp.spend.toLocaleString()}</span>
+                        ) : (
+                          <span className="text-[#667085] italic font-normal">No data</span>
+                        )}
                       </td>
 
                       {/* CTR */}
-                      <td className="px-3 py-3 text-right text-[#202938]">
-                        {camp.ctr !== '—' ? `${camp.ctr}%` : '—'}
+                      <td className="px-3 py-3 text-right">
+                        {camp.ctr !== 'No data' && camp.ctr !== '—' ? (
+                          <span className="text-[#202938]">{camp.ctr}%</span>
+                        ) : (
+                          <span className="text-[#667085] italic font-normal">No data</span>
+                        )}
                       </td>
 
                       {/* New Customers Acquired */}
-                      <td className="px-3 py-3 text-right font-semibold text-[#202938]">
-                        {camp.conversions}
+                      <td className="px-3 py-3 text-right">
+                        {camp.conversions !== null && camp.conversions !== undefined ? (
+                          <span className="font-semibold text-[#202938]">{camp.conversions}</span>
+                        ) : (
+                          <span className="text-[#667085] italic font-normal">No data</span>
+                        )}
                       </td>
 
                       {/* CAC */}
-                      <td className="px-3 py-3 text-right font-medium text-[#202938]">
-                        {camp.cac !== '—' ? `$${formatMetricNumber(camp.cac, 2)}` : '—'}
+                      <td className="px-3 py-3 text-right">
+                        {camp.cac !== 'No data' && camp.cac !== '—' ? (
+                          <span className="font-medium text-[#202938]">${formatMetricNumber(camp.cac, 2)}</span>
+                        ) : (
+                          <span className="text-[#667085] italic font-normal">No data</span>
+                        )}
                       </td>
 
                       {/* ROAS */}
-                      <td className="px-3 py-3 text-right font-semibold text-[#426A8C]">
-                        {camp.roas !== '—' ? `${formatMetricNumber(camp.roas, 2)}x` : '—'}
+                      <td className="px-3 py-3 text-right">
+                        {camp.roas !== 'No data' && camp.roas !== '—' ? (
+                          <span className="font-semibold text-[#426A8C]">{formatMetricNumber(camp.roas, 2)}x</span>
+                        ) : (
+                          <span className="text-[#667085] italic font-normal">No data</span>
+                        )}
                       </td>
 
                       {/* Actions */}
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* If it's a user campaign, provide Edit & Delete */}
-                          {dataSource === 'user' && matchingUserCampaign && (
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* If campaign has draft content, offer Preview and Continue Editing in Agent */}
+                          {(camp.draftContent || camp.isDraft) && (
                             <>
                               <button
-                                onClick={() => {
-                                  setCampaignToEdit(matchingUserCampaign);
-                                  setIsCampaignModalOpen(true);
-                                }}
+                                onClick={() => setViewingDraft(camp)}
                                 className="p-1 text-[#667085] hover:text-[#426A8C] hover:bg-[#EAF0F5] rounded transition"
-                                title="Edit campaign figures"
+                                title="View generated marketing copy"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Eye className="w-3.5 h-3.5" />
                               </button>
 
-                              <button
-                                onClick={() => handleDeleteCampaign(camp.id, camp.name)}
-                                className="p-1 text-[#667085] hover:text-red-600 hover:bg-red-50 rounded transition"
-                                title="Delete campaign"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {onOpenDraftInAgent && (
+                                <button
+                                  onClick={() =>
+                                    onOpenDraftInAgent({
+                                      content: camp.draftContent || '',
+                                      title: camp.name,
+                                      channel: camp.channel,
+                                      mode: camp.writingMode,
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded bg-[#EAF0F5] hover:bg-[#DFE9F2] text-[#426A8C] border border-[#D8E2EA] text-[11px] font-medium transition flex items-center gap-1"
+                                  title="Open and continue editing in Marketing Agent"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                  <span>Edit in Agent</span>
+                                </button>
+                              )}
                             </>
                           )}
 
-                          {/* Optimize in Agent */}
-                          <button
-                            onClick={() => onOptimizeCampaignInAgent && onOptimizeCampaignInAgent(camp)}
-                            className="px-2.5 py-1 rounded bg-[#EAF0F5] hover:bg-[#DFE9F2] text-[#426A8C] border border-[#D8E2EA] text-xs font-semibold transition"
-                            title="Generate marketing copy in AI Agent"
-                          >
-                            Optimize Copy
-                          </button>
+                          {/* If it's a draft without performance data, offer "Add Figures" */}
+                          {dataSource === 'user' && matchingUserCampaign && isDraftRow && (
+                            <button
+                              onClick={() => {
+                                setCampaignToEdit(matchingUserCampaign);
+                                setIsCampaignModalOpen(true);
+                              }}
+                              className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold transition flex items-center gap-1"
+                              title="Enter real or illustrative performance figures (spend, clicks, conversions)"
+                            >
+                              <PlusCircle className="w-3 h-3 text-emerald-600" />
+                              <span>Add Data</span>
+                            </button>
+                          )}
+
+                          {/* Standard Edit for active campaigns */}
+                          {dataSource === 'user' && matchingUserCampaign && !isDraftRow && (
+                            <button
+                              onClick={() => {
+                                setCampaignToEdit(matchingUserCampaign);
+                                setIsCampaignModalOpen(true);
+                              }}
+                              className="p-1 text-[#667085] hover:text-[#426A8C] hover:bg-[#EAF0F5] rounded transition"
+                              title="Edit campaign figures"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* Delete Campaign */}
+                          {dataSource === 'user' && matchingUserCampaign && (
+                            <button
+                              onClick={() => handleDeleteCampaign(camp.id, camp.name)}
+                              className="p-1 text-[#667085] hover:text-red-600 hover:bg-red-50 rounded transition"
+                              title="Delete campaign"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* Optimize in Agent (for non-draft campaigns) */}
+                          {!camp.draftContent && onOptimizeCampaignInAgent && (
+                            <button
+                              onClick={() => onOptimizeCampaignInAgent(camp)}
+                              className="px-2.5 py-1 rounded bg-[#EAF0F5] hover:bg-[#DFE9F2] text-[#426A8C] border border-[#D8E2EA] text-xs font-semibold transition"
+                              title="Generate marketing copy in AI Agent"
+                            >
+                              Optimize Copy
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -866,7 +1015,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-xs text-[#667085]">
+                  <td colSpan={10} className="px-4 py-8 text-center text-xs text-[#667085]">
                     No campaigns found matching current filters.
                   </td>
                 </tr>
@@ -898,6 +1047,106 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         isOpen={isFormulasModalOpen}
         onClose={() => setIsFormulasModalOpen(false)}
       />
+
+      {/* Draft Preview Modal */}
+      {viewingDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white border border-[#D8E2EA] rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-[#D8E2EA] flex items-center justify-between bg-[#F8FAFC]">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-[#202938]">{viewingDraft.name}</h3>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                    {viewingDraft.status}
+                  </span>
+                </div>
+                <p className="text-xs text-[#667085] mt-0.5">
+                  {viewingDraft.channel} · {viewingDraft.product} · Created on {viewingDraft.date || 'Recent'}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewingDraft(null)}
+                className="p-1 rounded-md text-[#667085] hover:text-[#202938] hover:bg-[#EAF0F5] transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto flex-1 text-xs sm:text-sm">
+              <div className="mb-4 p-3 bg-[#F8FAFC] border border-[#D8E2EA] rounded-md text-xs text-[#667085] flex items-center justify-between">
+                <span>
+                  <strong>Performance Status:</strong> No performance metrics recorded yet. Metrics remain uncalculated until spend or conversion figures are entered.
+                </span>
+                <span className="font-mono text-[11px] bg-white px-2 py-0.5 rounded border border-[#D8E2EA] text-[#426A8C]">
+                  {viewingDraft.id}
+                </span>
+              </div>
+
+              {viewingDraft.draftContent ? (
+                <div className="bg-[#F8FAFC] p-4 rounded-lg border border-[#D8E2EA]">
+                  <FormattedContent content={viewingDraft.draftContent} />
+                </div>
+              ) : (
+                <div className="py-8 text-center text-xs text-[#667085]">
+                  No draft copy recorded for this campaign.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-[#D8E2EA] bg-[#F8FAFC] flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <span className="text-[11px] text-[#667085]">
+                Linked directly to Marketing Agent Studio.
+              </span>
+
+              <div className="flex items-center gap-2">
+                {onOpenDraftInAgent && (
+                  <button
+                    onClick={() => {
+                      const d = viewingDraft;
+                      setViewingDraft(null);
+                      onOpenDraftInAgent({
+                        content: d.draftContent || '',
+                        title: d.name,
+                        channel: d.channel,
+                        mode: d.writingMode,
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#426A8C] hover:bg-[#355571] text-white text-xs font-semibold shadow-2xs transition"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit in Marketing Agent</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    const match = userCampaigns.find((c) => c.id === viewingDraft.id);
+                    setViewingDraft(null);
+                    if (match) {
+                      setCampaignToEdit(match);
+                      setIsCampaignModalOpen(true);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-white hover:bg-[#EAF0F5] text-[#202938] border border-[#D8E2EA] text-xs font-medium transition"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Enter Performance Figures</span>
+                </button>
+
+                <button
+                  onClick={() => setViewingDraft(null)}
+                  className="px-3 py-1.5 rounded bg-[#EAF0F5] hover:bg-[#DFE9F2] text-[#202938] text-xs font-medium transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

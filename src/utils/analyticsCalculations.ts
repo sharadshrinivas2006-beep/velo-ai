@@ -141,32 +141,126 @@ export function saveDataSourcePreference(pref: 'user' | 'sample'): void {
 
 // Convert UserCampaign to CampaignData for table and agent optimization
 export function userCampaignToCampaignData(cmp: UserCampaign): CampaignData {
-  const ctrVal = cmp.impressions > 0 ? (cmp.clicks / cmp.impressions) * 100 : null;
-  const cacVal = cmp.newCustomers > 0 ? cmp.spend / cmp.newCustomers : null;
-  const roasVal = cmp.spend > 0 ? cmp.attributedRevenue / cmp.spend : null;
+  const isDraftWithoutData = cmp.hasPerformanceData === false || (cmp.spend === undefined && cmp.impressions === undefined && cmp.clicks === undefined && cmp.newCustomers === undefined);
+
+  if (isDraftWithoutData) {
+    return {
+      id: cmp.id,
+      name: cmp.name,
+      channel: cmp.channel,
+      targetSegment: cmp.targetSegment || 'Target Audience',
+      spend: null,
+      impressions: null,
+      clicks: null,
+      ctr: 'No data',
+      conversions: null,
+      cac: 'No data',
+      roas: 'No data',
+      status: cmp.status || (cmp.draftStatus === 'Ready for review' ? 'Ready for review' : 'Draft'),
+      product: cmp.product || 'VeloYield Treasury',
+      date: cmp.date,
+      websiteVisits: null,
+      newCustomers: null,
+      attributedRevenue: null,
+      emailDelivered: cmp.emailDelivered,
+      emailOpens: cmp.emailOpens,
+      estimatedLtv: cmp.estimatedLtv,
+      isDraft: true,
+      draftStatus: cmp.draftStatus || 'Draft',
+      draftContent: cmp.draftContent,
+      writingMode: cmp.writingMode,
+      hasPerformanceData: false,
+      source: cmp.source || 'marketing_agent',
+    };
+  }
+
+  const spend = Number(cmp.spend ?? 0);
+  const impressions = Number(cmp.impressions ?? 0);
+  const clicks = Number(cmp.clicks ?? 0);
+  const newCustomers = Number(cmp.newCustomers ?? 0);
+  const revenue = Number(cmp.attributedRevenue ?? 0);
+
+  const ctrVal = impressions > 0 ? (clicks / impressions) * 100 : null;
+  const cacVal = newCustomers > 0 ? spend / newCustomers : null;
+  const roasVal = spend > 0 ? revenue / spend : null;
 
   return {
     id: cmp.id,
     name: cmp.name,
     channel: cmp.channel,
     targetSegment: cmp.targetSegment || 'Target Audience',
-    spend: cmp.spend,
-    impressions: cmp.impressions,
-    clicks: cmp.clicks,
+    spend,
+    impressions,
+    clicks,
     ctr: ctrVal !== null ? Number(ctrVal.toFixed(2)) : '—',
-    conversions: cmp.newCustomers,
+    conversions: newCustomers,
     cac: cacVal !== null ? Number(cacVal.toFixed(2)) : '—',
     roas: roasVal !== null ? Number(roasVal.toFixed(2)) : '—',
     status: cmp.status || 'Active',
     product: cmp.product || 'VeloYield Treasury',
     date: cmp.date,
-    websiteVisits: cmp.websiteVisits,
-    newCustomers: cmp.newCustomers,
-    attributedRevenue: cmp.attributedRevenue,
+    websiteVisits: cmp.websiteVisits ?? 0,
+    newCustomers,
+    attributedRevenue: revenue,
     emailDelivered: cmp.emailDelivered,
     emailOpens: cmp.emailOpens,
     estimatedLtv: cmp.estimatedLtv,
+    isDraft: cmp.isDraft || false,
+    draftStatus: cmp.draftStatus,
+    draftContent: cmp.draftContent,
+    writingMode: cmp.writingMode,
+    hasPerformanceData: true,
+    source: cmp.source || 'manual',
   };
+}
+
+// Automatically create and persist a campaign record from an agent draft
+export function createDraftCampaignFromAgent(params: {
+  draftName?: string;
+  channel: string;
+  content: string;
+  targetAudience?: string;
+  product?: string;
+  writingMode?: any;
+}): UserCampaign {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const uniqueId = `cmp-draft-${now.getTime()}-${Math.random().toString(36).substring(2, 6)}`;
+  
+  // Format clean human-readable name if not provided
+  let name = params.draftName;
+  if (!name || name.trim() === '') {
+    const firstLine = params.content.split('\n')[0].replace(/^#+\s*/, '').trim();
+    if (firstLine && firstLine.length > 5 && firstLine.length < 50) {
+      name = firstLine;
+    } else {
+      const modeLabel = params.writingMode ? String(params.writingMode).replace('_', ' ') : 'Marketing';
+      name = `${modeLabel.charAt(0).toUpperCase() + modeLabel.slice(1)}: ${params.channel}`;
+    }
+  }
+
+  const newDraftCampaign: UserCampaign = {
+    id: uniqueId,
+    name,
+    channel: params.channel,
+    date: dateStr,
+    targetSegment: params.targetAudience || 'FinTech Founders & CFOs',
+    product: params.product || 'VeloYield Treasury',
+    status: 'Draft',
+    draftStatus: 'Draft',
+    isDraft: true,
+    hasPerformanceData: false,
+    draftContent: params.content,
+    writingMode: params.writingMode,
+    source: 'marketing_agent',
+    createdAt: now.toISOString(),
+  };
+
+  const current = loadUserCampaigns();
+  const updated = [newDraftCampaign, ...current];
+  saveUserCampaigns(updated);
+
+  return newDraftCampaign;
 }
 
 // Format numbers safely
@@ -306,6 +400,18 @@ export function calculateDashboardFromUserCampaigns(
     };
   }
 
+  // Separate campaigns with performance data from pure drafts
+  const performanceCampaigns = campaigns.filter((c) => {
+    if (c.hasPerformanceData === false) return false;
+    return (
+      (c.spend !== undefined && c.spend !== null) ||
+      (c.impressions !== undefined && c.impressions !== null) ||
+      (c.clicks !== undefined && c.clicks !== null) ||
+      (c.newCustomers !== undefined && c.newCustomers !== null) ||
+      (c.attributedRevenue !== undefined && c.attributedRevenue !== null)
+    );
+  });
+
   // Aggregate totals
   let totalSpend = 0;
   let totalImpressions = 0;
@@ -318,7 +424,7 @@ export function calculateDashboardFromUserCampaigns(
   let ltvSum = 0;
   let ltvCount = 0;
 
-  campaigns.forEach((c) => {
+  performanceCampaigns.forEach((c) => {
     totalSpend += Number(c.spend) || 0;
     totalImpressions += Number(c.impressions) || 0;
     totalClicks += Number(c.clicks) || 0;
@@ -344,7 +450,7 @@ export function calculateDashboardFromUserCampaigns(
     ? avgLtvValue / cacValue 
     : null;
 
-  // Group by channel
+  // Group by channel (only performance campaigns)
   const channelMap: Record<string, {
     spend: number;
     clicks: number;
@@ -354,7 +460,7 @@ export function calculateDashboardFromUserCampaigns(
     revenue: number;
   }> = {};
 
-  campaigns.forEach((c) => {
+  performanceCampaigns.forEach((c) => {
     const ch = c.channel || 'Other';
     if (!channelMap[ch]) {
       channelMap[ch] = {
@@ -392,9 +498,9 @@ export function calculateDashboardFromUserCampaigns(
     };
   });
 
-  // Group by date for TimeSeries
+  // Group by date for TimeSeries (performance data only)
   const dateMap: Record<string, { traffic: number; conversions: number; spend: number }> = {};
-  campaigns.forEach((c) => {
+  performanceCampaigns.forEach((c) => {
     const dStr = c.date ? c.date.slice(5) : 'Recent'; // e.g. "09-24"
     if (!dateMap[dStr]) {
       dateMap[dStr] = { traffic: 0, conversions: 0, spend: 0 };

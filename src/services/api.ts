@@ -171,33 +171,108 @@ export async function requestSafeguardAudit(text: string): Promise<SafeguardAudi
 
 function getFallbackMarketingResponse(payload: MarketingAgentPayload): MarketingAgentResponse {
   const p = payload.parameters || {};
-  return {
-    content: `### ✉️ Campaign Draft: VeloFin Capital & Treasury
+  const mode = p.writingMode || 'email';
+  const prompt = payload.prompt.trim();
+  const summary = prompt.replace(/^(write|create|draft|generate|make|build|provide)\s+(a|an|the)?/i, '').trim();
+  const title = summary.length > 5 ? summary.charAt(0).toUpperCase() + summary.slice(1, 55) : 'FinTech Campaign Draft';
+  const audience = p.targetAudience || 'Founders & CFOs';
+  const product = p.product || 'VeloYield Treasury';
+  const tone = p.tone || 'Professional & Data-Driven';
 
-**Channel:** ${p.channel || 'Email Campaign'}  
-**Audience:** ${p.targetAudience || 'Startup Founders & CFOs'}  
-**Product:** ${p.product || 'VeloYield Treasury (4.85% Illustrative Variable APY)'}  
+  let body = '';
+  if (mode === 'blog' || (p.channel && p.channel.toLowerCase().includes('blog'))) {
+    body = `### 📝 Blog Post: ${title}
+
+**Target Audience:** ${audience}  
+**Product:** ${product}  
+**Tone:** ${tone}  
+**User Request:** "${prompt}"
+
+#### Executive Summary
+When evaluating financial infrastructure for ${audience}, standard commercial accounts create unnecessary cost and friction. This guide explores modern approaches to addressing "${summary.slice(0, 60)}".
+
+#### Core Analysis: Addressing Modern Treasury Friction
+Modern high-growth companies cannot afford idle balance drag. Implementing **${product}** helps teams:
+- Maximize capital velocity with automated rules
+- Maintain immediate liquidity for payroll and daily operations
+- Access pass-through FDIC insurance eligibility up to $5M
+
+#### Recommended Action
+Evaluate current account structures and run illustrative runway scenario modeling.
+👉 **[Explore the Interactive Runway Simulator]**
 
 ---
-**Subject:** Stop leaving startup runway at 0.05% checking rates
-**Preview Text:** Put idle operating cash to work with automated multi-bank FDIC insurance sweep.
+*Disclaimer: Illustrative prototype. Not formal tax or investment advice.*`;
+  } else if (mode === 'advertisement') {
+    body = `### 🎯 Paid Ad Campaign Copy: ${title}
+
+**Target Audience:** ${audience}  
+**Product:** ${product}  
+**Prompt:** "${prompt}"
+
+#### Variation 1: Sponsored Search Copy
+- **Headline:** ${title} | ${product}
+- **Description:** Built specifically for ${audience}. Fast onboarding, automated yield sweep, zero lockups.
+- **CTA:** Get Started
+
+#### Variation 2: Social / LinkedIn B2B
+- **Headline:** Modern Treasury Infrastructure for ${audience}
+- **Primary Text:** Addressing "${prompt.slice(0, 80)}". Unlock automated yield sweep and smart expense controls.
+- **CTA:** Request Briefing
+
+---
+*Compliance Notice: Prototype demonstration. Yield rates are illustrative and variable.*`;
+  } else if (mode === 'social_media') {
+    body = `### 📱 Social Media Post: ${title}
+
+**Audience:** ${audience} · **Product:** ${product}
+
+Most finance leaders focus on top-line revenue, but overlook the operational efficiencies that preserve runway.
+
+Regarding **${title}**:
+Legacy setups introduce friction, high fees, and sluggish execution.
+
+With **${product}**:
+→ Automated operational velocity
+→ Built for ${audience}
+→ Real-time visibility across all accounts
+
+Let's discuss your current treasury distribution strategy in the comments 👇
+
+---
+*Illustrative FinTech prototype notice.*`;
+  } else {
+    body = `### ✉️ Email Campaign: ${title}
+
+**Audience:** ${audience}  
+**Product:** ${product}  
+**Tone:** ${tone}  
+**Goal:** ${p.goal || 'Product Activation'}
+
+---
+**Subject:** ${title} — Built for ${audience}  
+**Preview:** How ${product} helps solve "${prompt.slice(0, 50)}..."
 
 Hi {{FirstName}},
 
-As a founder, capital efficiency is your primary competitive edge. 
+When evaluating options for **${title}**, modern finance teams require both velocity and security.
 
-With **VeloYield Treasury**, surplus operating reserves are automatically swept across our network of partner institutions:
-- **Earn up to 4.85% variable APY** (illustrative benchmark rate).
-- **Up to $5,000,000 FDIC insurance eligibility** via program banks.
-- **Zero lockups:** Keep 100% liquidity for payroll and vendor payments.
+With **${product}**, your capital operations are automated from day one:
+- **Purpose-Built for ${audience}:** Designed to support ${p.goal || 'efficient capital growth'}.
+- **Automated Sweep:** Put operating reserves to work with variable yields up to 4.85% APY.
+- **Security First:** Pass-through FDIC insurance eligibility up to $5,000,000 across program banks.
 
-👉 **[Explore Treasury Simulator & Open Account]**
+👉 **[Explore ${product} Dashboard]**
 
 Best regards,  
-The VeloFin Capital Team
+The VeloFin Team
 
 ---
-*Notice: VeloFin is an illustrative FinTech prototype. APY is variable and based on hypothetical assumptions.*`,
+*Notice: VeloFin is an illustrative FinTech prototype. APY is variable and based on hypothetical assumptions.*`;
+  }
+
+  return {
+    content: body,
     safeguardAudit: {
       passed: true,
       score: 100,
@@ -211,6 +286,6 @@ The VeloFin Capital Team
       disclaimer: '⚠️ FinTech Regulatory Notice: All VeloFin products, rates, fees, and metrics are hypothetical prototypes for demonstration purposes. Yield rates are variable and illustrative.',
     },
     isSimulated: true,
-    modelUsed: 'client-fallback',
+    modelUsed: 'client-fallback (Dynamic Synthesizer)',
   };
 }

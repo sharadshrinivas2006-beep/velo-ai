@@ -7,7 +7,9 @@ import {
   RotateCw, 
   SlidersHorizontal,
   Lock,
-  Headphones
+  Headphones,
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { requestMarketingAgent } from '../../services/api';
 import { ChatMessage, WritingMode, SafetyReviewResult } from '../../types';
@@ -22,6 +24,7 @@ import {
   addSafetyHistoryRecord,
   maskSensitiveSecrets
 } from '../../utils/safetyAuditor';
+import { createDraftCampaignFromAgent } from '../../utils/analyticsCalculations';
 
 const PRESET_PROMPTS = [
   {
@@ -113,7 +116,17 @@ Select a preset below or enter a custom request to generate compliant copy.`,
   },
 ];
 
-export const AgentStudio: React.FC = () => {
+interface AgentStudioProps {
+  draftToLoad?: { content: string; title: string; channel: string; mode?: WritingMode } | null;
+  onClearDraftToLoad?: () => void;
+  onNavigateToAnalytics?: () => void;
+}
+
+export const AgentStudio: React.FC<AgentStudioProps> = ({
+  draftToLoad,
+  onClearDraftToLoad,
+  onNavigateToAnalytics,
+}) => {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [selectedMode, setSelectedMode] = useState<WritingMode>('email');
   const [inputPrompt, setInputPrompt] = useState('');
@@ -139,6 +152,23 @@ export const AgentStudio: React.FC = () => {
   } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-open draft editor if navigated from Analytics
+  useEffect(() => {
+    if (draftToLoad) {
+      if (draftToLoad.mode && WRITING_MODES[draftToLoad.mode]) {
+        setSelectedMode(draftToLoad.mode);
+      }
+      setEditingDraft({
+        content: draftToLoad.content,
+        title: draftToLoad.title || 'Edit Draft Campaign',
+        channel: draftToLoad.channel || 'Marketing Campaign',
+      });
+      if (onClearDraftToLoad) {
+        onClearDraftToLoad();
+      }
+    }
+  }, [draftToLoad, onClearDraftToLoad]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -232,6 +262,15 @@ export const AgentStudio: React.FC = () => {
         isSample: false,
       });
 
+      // Automatically link generated marketing draft to Analytics as a campaign record
+      const linkedDraftCampaign = createDraftCampaignFromAgent({
+        channel: currentChannel,
+        content: response.content,
+        targetAudience: currentAudience,
+        product: currentProduct,
+        writingMode: currentMode,
+      });
+
       const assistantMessage: ChatMessage = {
         id: `asst-${Date.now()}`,
         role: 'assistant',
@@ -249,6 +288,8 @@ export const AgentStudio: React.FC = () => {
         safetyReview,
         isSimulated: response.isSimulated,
         modelUsed: response.modelUsed,
+        linkedCampaignId: linkedDraftCampaign.id,
+        linkedCampaignName: linkedDraftCampaign.name,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -422,6 +463,27 @@ export const AgentStudio: React.FC = () => {
                       {modeCfg.label}
                     </span>
                   )}
+                  {message.role === 'assistant' && message.id !== 'msg-welcome' && (
+                    <>
+                      {message.isSimulated ? (
+                        <span 
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-300"
+                          title="Simulated FinTech engine - active when live Gemini key is not configured or offline fallback"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                          Simulated Engine
+                        </span>
+                      ) : (
+                        <span 
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          title="Generated live by Gemini 3.8 Flash model"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          Gemini 3.8 Flash (Live)
+                        </span>
+                      )}
+                    </>
+                  )}
                   <span>·</span>
                   <span>{message.timestamp}</span>
                 </div>
@@ -455,6 +517,34 @@ export const AgentStudio: React.FC = () => {
                     <FormattedContent content={message.content} />
                   ) : (
                     <div className="whitespace-pre-wrap">{message.content}</div>
+                  )}
+
+                  {/* Linked Analytics Campaign Banner */}
+                  {message.role === 'assistant' && message.linkedCampaignId && (
+                    <div className="mt-3.5 p-3 bg-[#F8FAFC] border border-[#D8E2EA] rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-[#EAF0F5] text-[#426A8C] font-mono text-[11px] font-bold">
+                          {message.linkedCampaignId}
+                        </span>
+                        <div className="text-xs text-[#202938]">
+                          <span className="font-semibold">{message.linkedCampaignName}</span>
+                          <span className="text-[#667085] ml-1.5 font-normal">automatically linked as Analytics campaign row</span>
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold">
+                          Draft
+                        </span>
+                      </div>
+
+                      {onNavigateToAnalytics && (
+                        <button
+                          onClick={onNavigateToAnalytics}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white hover:bg-[#EAF0F5] text-[#426A8C] border border-[#D8E2EA] text-xs font-semibold transition shrink-0 self-start sm:self-auto"
+                        >
+                          <span>View in Analytics</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {/* Response Actions & Safety Review Card */}

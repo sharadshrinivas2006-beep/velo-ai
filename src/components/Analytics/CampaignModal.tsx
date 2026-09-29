@@ -41,7 +41,7 @@ export const CampaignModal: React.FC<CampaignModalProps> = ({
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [targetSegment, setTargetSegment] = useState('');
   const [product, setProduct] = useState('VeloYield Treasury');
-  const [status, setStatus] = useState<'Active' | 'Paused' | 'Optimizing'>('Active');
+  const [status, setStatus] = useState<'Active' | 'Paused' | 'Optimizing' | 'Draft' | 'Ready for review'>('Active');
 
   // Numeric fields as strings for easy controlled input typing
   const [spend, setSpend] = useState<string>('0');
@@ -232,6 +232,12 @@ export const CampaignModal: React.FC<CampaignModalProps> = ({
       product,
       status,
       createdAt: initialCampaign?.createdAt || new Date().toISOString(),
+      isDraft: initialCampaign?.isDraft || false,
+      draftStatus: initialCampaign?.draftStatus,
+      draftContent: initialCampaign?.draftContent,
+      writingMode: initialCampaign?.writingMode,
+      hasPerformanceData: true,
+      source: initialCampaign?.source || 'manual',
     };
 
     onSave(campaign);
